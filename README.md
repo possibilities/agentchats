@@ -13,8 +13,8 @@ It does this with two pieces:
   upstream checksummed release into `~/.local/bin`, builds or refreshes the
   index, and verifies the Claude Code, Codex, and Pi session stores are
   actually covered.
-- **The `chats` skill.** `chats/SKILL.md` is a comprehensive runbook that
-  lets agents wield cass expertly: robot-mode discipline, the triage
+- **The `chats` skill.** `skills/chats/SKILL.md` is a comprehensive runbook
+  that lets agents wield cass expertly: robot-mode discipline, the triage
   preflight, search and query language, token budgeting, cited handoff
   packs, and recovery.
 
@@ -23,8 +23,9 @@ It does this with two pieces:
 ## Installation
 
 Funk owns installation. A full `~/code/funk/install` (or
-`~/code/funk/libexec/install-ai-tools`) runs the cass installer and installs
-the `chats` skill globally for Codex, Claude Code, OpenCode, and Pi.
+`~/code/funk/libexec/install-ai-tools`) runs the cass installer, and Funk's
+per-checkout skill scan ships `skills/chats/` globally for Codex, Claude
+Code, OpenCode, and Pi.
 
 Directly, from this checkout:
 
@@ -40,7 +41,7 @@ npx --yes skills add "$HOME/code/agentchats" \
 ## Layout
 
 ```
-scripts/install.sh   cass installation contract (Funk calls this)
-chats/SKILL.md       the chats skill
-chats/agents/        per-agent skill manifest (openai.yaml)
+scripts/install.sh     cass installation contract (Funk calls this)
+skills/chats/SKILL.md  the chats skill (Funk's skill scan ships this)
+skills/chats/agents/   per-agent skill manifest (openai.yaml)
 ```
