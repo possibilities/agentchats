@@ -117,8 +117,8 @@ Terms AND by default. Case-insensitive.
 Filters compose with any query:
 
 - `--agent claude_code` — one agent's history only. Slugs are exact:
-  `claude_code`, `codex`, `pi_agent`, `gemini`, `cursor`, `opencode`,
-  `aider`, `amp`, `cline`, `chatgpt`, `factory`, `copilot`, `copilot_cli`,
+  `claude_code`, `codex`, `pi_agent`, `gemini`, `cursor`, `aider`,
+  `amp`, `cline`, `chatgpt`, `factory`, `copilot`, `copilot_cli`,
   … (`cass capabilities --json | jq .connectors` for all 23).
 - `--workspace /path` — one project. Use the workspace string exactly as
   hits report it.

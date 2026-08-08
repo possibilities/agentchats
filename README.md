@@ -25,7 +25,7 @@ It does this with two pieces:
 Funk owns installation. A full `~/code/funk/install` (or
 `~/code/funk/libexec/install-ai-tools`) runs the cass installer, and Funk's
 per-checkout skill scan ships `skills/chats/` globally for Codex, Claude
-Code, OpenCode, and Pi.
+Code, and Pi.
 
 Directly, from this checkout:
 
@@ -34,7 +34,7 @@ scripts/install.sh --install   # install/upgrade cass, prepare the index
 scripts/install.sh --check     # print the plan without changing anything
 
 npx --yes skills add "$HOME/code/agentchats" \
-    --agent codex claude-code opencode pi \
+    --agent codex claude-code pi \
     --skill chats --global --yes
 ```
 

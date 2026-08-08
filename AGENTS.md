@@ -48,5 +48,5 @@ synchronization path here.
 - Skill changes: reinstall globally with Funk's scanner
   (`~/code/funk/libexec/install-code-skills`) or directly with
   `npx --yes skills add "$HOME/code/agentchats" --agent codex claude-code
-  opencode pi --skill chats --global --yes`, then confirm the installed
-  copies match this checkout.
+  pi --skill chats --global --yes`, then confirm the installed copies match
+  this checkout.
