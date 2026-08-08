@@ -53,13 +53,43 @@ cass_healthy() {
     "$dest_dir/cass" health >/dev/null 2>&1
 }
 
+# The index is shared state: other agents' cass processes index it too, and
+# cass refuses concurrent writers with exit 7 (lock/busy, retryable). An
+# active rebuild by someone else is this installer's goal being accomplished
+# by another hand, so wait for it instead of failing the run. Bounded: a
+# large first build takes tens of minutes.
+wait_for_index_turn() {
+    local waited=0
+    local interval=15
+    local budget=1800
+
+    while "$dest_dir/cass" status --json 2>/dev/null \
+        | /usr/bin/jq -e '.rebuild.active == true' >/dev/null 2>&1; do
+        if [ "$waited" -eq 0 ]; then
+            printf 'Another cass process is rebuilding the index; waiting for it.\n'
+        fi
+        [ "$waited" -lt "$budget" ] \
+            || die "an index rebuild has been active for over $((budget / 60)) minutes; investigate with: cass status --json"
+        sleep "$interval"
+        waited=$((waited + interval))
+    done
+}
+
+# Search is the installer's promise, so search is the gate. Health probes
+# can report transient states under concurrent cass activity that a served
+# search disproves; a genuinely broken index fails this probe too.
+cass_serves_search() {
+    "$dest_dir/cass" search "" --robot --limit 1 >/dev/null 2>&1
+}
+
 case "${1:-}" in
     --check)
         cat <<EOF
 cass (coding agent session search):
   curl -fsSL $installer_url | bash -s -- --verify [--version <gh-resolved tag>]
-  cass index          # incremental when healthy; cass index --full otherwise
-  cass health         # must pass after indexing
+  cass index          # incremental when serving; cass index --full otherwise
+                      # yields to any rebuild another process has in flight
+  cass search "" --robot --limit 1   # the gate: search must serve after indexing
   report indexed conversations for the claude_code, codex, and pi session stores
 EOF
         exit 0
@@ -99,22 +129,29 @@ fi
 
 [ -x "$dest_dir/cass" ] || die "cass did not install to $dest_dir/cass"
 
-# Prepare the index. A healthy install refreshes incrementally; a first
-# install or an unhealthy one rebuilds. An incremental refresh that fails
+# Prepare the index. A serving install refreshes incrementally; a first
+# install or a broken one rebuilds fully. An incremental refresh that fails
 # (for example across an upstream schema change) escalates to a full rebuild
-# rather than failing the run.
-if cass_healthy; then
+# rather than failing the run, and every step yields to a rebuild another
+# process already has in flight.
+wait_for_index_turn
+if cass_serves_search; then
     printf 'Refreshing the cass index incrementally.\n'
     if ! "$dest_dir/cass" index; then
-        printf 'Incremental index failed; rebuilding fully.\n' >&2
-        "$dest_dir/cass" index --full
+        wait_for_index_turn
+        if ! cass_serves_search; then
+            printf 'Incremental index failed; rebuilding fully.\n' >&2
+            "$dest_dir/cass" index --full
+        fi
     fi
 else
-    printf 'Building the cass index for the first time.\n'
+    printf 'Building the cass index.\n'
     "$dest_dir/cass" index --full
 fi
+wait_for_index_turn
 
-cass_healthy || die "cass is unhealthy after indexing; run: cass triage --json"
+cass_serves_search \
+    || die "cass cannot serve a search after indexing; run: cass triage --json"
 
 # Prove the agents this machine uses are actually searchable. A session store
 # that exists on disk but indexed nothing is the failure this installer is

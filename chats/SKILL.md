@@ -57,6 +57,13 @@ suggestion. Typical states:
 - **Rebuilding** → wait and retry; don't stack rebuilds.
 - **Healthy** → search.
 
+The archive is shared state: sibling agents and background installs run
+cass concurrently. `index-busy`/`lock-busy` (exit 7) is normal traffic —
+poll `status.rebuild.active` and take your turn; another actor's rebuild
+is your index getting fresher for free. Health probes can also report
+transient degraded states while writers are active; a served search is
+the ground truth that the archive works.
+
 `cass index --full` is for first setup, explicit recommendation, or schema
 drift — not a reflexive repair loop. Aliases `cass ready --json` and
 `cass preflight --json` work; so does bare `cass --json` (defaults to
