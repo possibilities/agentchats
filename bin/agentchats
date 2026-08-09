@@ -1,0 +1,140 @@
+#!/bin/bash
+
+set -euo pipefail
+
+# Agentchats CLI: the small surface this repository owns on top of cass.
+#
+# `agentchats state` prints a budget-capped, workspace-scoped bearings dump —
+# recent coding-agent sessions for one project — for agents (an orchestrator,
+# a fresh session) that need to re-orient cheaply. Markdown for a model to
+# read, not JSON for a program: the deep, structured surface remains cass in
+# robot mode, and the runbook for that is the chats skill.
+#
+# Contract, shared with the other agent* state dumps:
+#   - scoped to one workspace (the current git project by default)
+#   - bounded by --budget (approximate tokens, ~4 characters each)
+#   - fast, offline, read-only, free
+#   - silent when there is nothing to say; one line when cass cannot serve
+
+cass_bin() {
+    if command -v cass >/dev/null 2>&1; then
+        command -v cass
+        return
+    fi
+    if [ -x "$HOME/.local/bin/cass" ]; then
+        printf '%s\n' "$HOME/.local/bin/cass"
+        return
+    fi
+    return 1
+}
+
+die() {
+    printf 'agentchats: %s\n' "$*" >&2
+    exit 1
+}
+
+usage() {
+    cat <<'EOF'
+Usage: agentchats state [--workspace <dir>] [--budget <tokens>]
+
+Print a budget-capped bearings dump of recent coding-agent sessions for one
+workspace, newest first. Made for agents re-orienting in a project; searching
+and reading the sessions themselves is cass (see the chats skill).
+
+Options:
+  --workspace <dir>   Project directory (default: the current git project)
+  --budget <tokens>   Approximate output budget (default: 400, ~4 chars/token)
+EOF
+}
+
+state() {
+    local workspace=""
+    local budget=400
+
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            --workspace)
+                [ "$#" -ge 2 ] || die "--workspace needs a directory"
+                workspace=$2
+                shift 2
+                ;;
+            --budget)
+                [ "$#" -ge 2 ] || die "--budget needs a token count"
+                budget=$2
+                shift 2
+                ;;
+            -h|--help)
+                usage
+                exit 0
+                ;;
+            *)
+                usage >&2
+                exit 64
+                ;;
+        esac
+    done
+
+    case "$budget" in
+        ''|*[!0-9]*) die "--budget must be a whole number of tokens" ;;
+    esac
+    [ "$budget" -ge 60 ] || die "--budget below 60 tokens cannot fit a dump"
+
+    if [ -z "$workspace" ]; then
+        workspace=$(git rev-parse --show-toplevel 2>/dev/null) || workspace=$PWD
+    fi
+    workspace=$(cd "$workspace" 2>/dev/null && pwd) \
+        || die "workspace is not a directory: $workspace"
+
+    local cass
+    cass=$(cass_bin) || {
+        printf '## chats\n- cass is not installed; run: ~/code/agentchats/scripts/install.sh --install\n'
+        return 0
+    }
+
+    # One session line is ~20 tokens; the header and trailer are ~30.
+    local limit=$(((budget - 30) / 20))
+    [ "$limit" -ge 1 ] || limit=1
+    [ "$limit" -le 10 ] || limit=10
+
+    local sessions
+    sessions=$("$cass" sessions --workspace "$workspace" --limit "$limit" --json 2>/dev/null) || {
+        printf '## chats\n- the session index cannot serve; run: cass triage --json\n'
+        return 0
+    }
+
+    # cass falls back to an unscoped listing when a workspace has no matches,
+    # and an index can carry duplicate rows for one session file, so scope
+    # strictly and collapse by path here. Silent when nothing matches: an
+    # empty section is the one output an agent never needs to read.
+    local lines
+    lines=$(/usr/bin/jq -r --arg ws "$workspace" '
+        [.sessions[] | select(.workspace == $ws)]
+        | group_by(.path) | map(sort_by(.modified) | last)
+        | sort_by(.modified // "") | reverse | .[]
+        | (.title // "" | gsub("\\s+"; " ") | ltrimstr(" ") | rtrimstr(" ")) as $title
+        | ($title | if . == "" then "(untitled)" else . end) as $title
+        | ($title | if length > 48 then .[:47] + "…" else . end) as $title
+        | "- \((.modified // "unknown")[:16]) · \(.agent) · \(.message_count) msgs (\(.human_turns) human) · \($title)"
+    ' <<<"$sessions")
+    [ -n "$lines" ] || return 0
+
+    printf '## chats — recent sessions in %s\n' "$workspace"
+    printf '%s\n' "$lines"
+    printf 'more: cass sessions --workspace %s --limit 10 --json · deeper: the chats skill\n' \
+        "$workspace"
+}
+
+case "${1:-}" in
+    state)
+        shift
+        state "$@"
+        ;;
+    -h|--help|'')
+        usage
+        exit 0
+        ;;
+    *)
+        usage >&2
+        exit 64
+        ;;
+esac

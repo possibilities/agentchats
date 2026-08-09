@@ -16,3 +16,12 @@ indexes: `~/.claude/projects` (Claude Code), `~/.codex/sessions` (Codex),
 **prepare** — what the installer does beyond installing the binary: build or
 refresh the index and verify the session stores are covered, so the first
 agent search works. _Avoid_: configure, setup.
+
+**agentchats CLI** — the small surface this repository owns on top of cass:
+`bin/agentchats`, linked editable into `~/.local/bin` by the installer. One
+subcommand today, `state`. _Avoid_: cass wrapper, chats CLI.
+
+**state dump** — the bearings section `agentchats state` prints for agents
+re-orienting in a project: workspace-scoped, budget-capped, markdown a model
+reads, silent when empty. The contract is shared across the `agent*` CLIs.
+_Avoid_: status, health check (both are cass's own commands).

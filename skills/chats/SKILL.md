@@ -69,6 +69,15 @@ drift — not a reflexive repair loop. Aliases `cass ready --json` and
 `cass preflight --json` work; so does bare `cass --json` (defaults to
 triage).
 
+### Workspace bearings
+
+`agentchats state [--workspace <dir>] [--budget <tokens>]` (this
+repository's own CLI, beside cass in `~/.local/bin`) prints the recent
+sessions for one project as a short markdown section, newest first, silent
+when the workspace has none. It is the cheap re-orientation step — "what
+has been happening here" — before any search; the moment you need content,
+switch to `cass search`/`cass sessions` in robot mode.
+
 ## The search loop
 
 Discover broadly with tight fields, then drill into the winner:

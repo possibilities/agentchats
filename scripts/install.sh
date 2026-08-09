@@ -13,16 +13,17 @@ upstream_owner=Dicklesworthstone
 upstream_repo=coding_agent_session_search
 installer_url="https://raw.githubusercontent.com/$upstream_owner/$upstream_repo/main/install.sh"
 dest_dir="$HOME/.local/bin"
+repo_root=$(cd "$(dirname "$0")/.." && pwd)
 
 usage() {
     cat <<'EOF'
 Usage: scripts/install.sh --install | --check
 
-Install cass (coding agent session search) and prepare its index over the
-local coding-agent session stores.
+Install cass (coding agent session search), link the agentchats CLI, and
+prepare the index over the local coding-agent session stores.
 
 Options:
-  --install  Install or upgrade cass, then build or refresh the index
+  --install  Install or upgrade cass, link agentchats, refresh the index
   --check    Print the installation plan without changing the system
 EOF
 }
@@ -87,6 +88,7 @@ case "${1:-}" in
         cat <<EOF
 cass (coding agent session search):
   curl -fsSL $installer_url | bash -s -- --verify [--version <gh-resolved tag>]
+  ln -sfn $repo_root/bin/agentchats $dest_dir/agentchats   # the agentchats CLI, linked editable
   cass index          # incremental when serving; cass index --full otherwise
                       # yields to any rebuild another process has in flight
   cass search "" --robot --limit 1   # the gate: search must serve after indexing
@@ -128,6 +130,11 @@ else
 fi
 
 [ -x "$dest_dir/cass" ] || die "cass did not install to $dest_dir/cass"
+
+# The agentchats CLI is linked editable back into this checkout, the same
+# contract the other agent* checkouts use for their own CLIs.
+printf 'Linking the agentchats CLI.\n'
+ln -sfn "$repo_root/bin/agentchats" "$dest_dir/agentchats"
 
 # Prepare the index. A serving install refreshes incrementally; a first
 # install or a broken one rebuilds fully. An incremental refresh that fails
