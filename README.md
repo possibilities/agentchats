@@ -1,4 +1,4 @@
-# Agentchats
+# AgentChats
 
 [![CI](https://github.com/possibilities/agentchats/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/possibilities/agentchats/actions/workflows/ci.yml)
 
