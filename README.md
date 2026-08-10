@@ -1,5 +1,7 @@
 # Agentchats
 
+[![CI](https://github.com/possibilities/agentchats/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/possibilities/agentchats/actions/workflows/ci.yml)
+
 Every coding agent on this machine leaves a session history — Claude Code
 under `~/.claude/projects`, Codex under `~/.codex/sessions`, Pi under
 `~/.pi/agent/sessions`. Agentchats turns that scattered history into a
