@@ -5,16 +5,16 @@
 Every coding agent on this machine leaves a session history — Claude Code
 under `~/.claude/projects`, Codex under `~/.codex/sessions`, Pi under
 `~/.pi/agent/sessions`. Agentchats turns that scattered history into a
-searchable archive and teaches agents to use it.
+searchable archive, and teaches agents to use it.
 
-It does this with three pieces:
+Three pieces do that:
 
 - **A cass installation contract.** [cass][cass] (coding agent session
-  search) is the CLI/TUI that indexes and searches local coding-agent
+  search) is the CLI and TUI that indexes and searches local coding-agent
   history across 23 agents. `scripts/install.sh --install` installs the
   upstream checksummed release into `~/.local/bin`, builds or refreshes the
-  index, and verifies the Claude Code, Codex, and Pi session stores are
-  actually covered.
+  index, and verifies that the Claude Code, Codex, and Pi session stores are
+  covered.
 - **The `agentchats` CLI.** `bin/agentchats`, linked editable into
   `~/.local/bin` by the installer. One subcommand today: `agentchats state`
   prints a budget-capped bearings dump — the recent coding-agent sessions
