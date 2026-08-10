@@ -1,0 +1,32 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Validate shell
+        run: |
+          bash -n scripts/install.sh bin/agentchats
+          shellcheck --shell=bash scripts/install.sh bin/agentchats
+
+      - name: Exercise read-only commands
+        run: |
+          scripts/install.sh --check
+          scripts/install.sh --help
+          bin/agentchats --help
