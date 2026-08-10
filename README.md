@@ -55,10 +55,10 @@ default), newest first, bounded by `--budget` (approximate tokens, default
 400):
 
 ```
-## chats — recent sessions in /Users/arthack/code/agentvoice
+## chats — recent sessions in $HOME/code/agentvoice
 - 2026-08-06T21:18 · codex · 108 msgs (2 human) · <recommended_plugins>
 - 2026-08-05T23:50 · codex · 84 msgs (2 human) · <recommended_plugins>
-more: cass sessions --workspace /Users/arthack/code/agentvoice --limit 10 --json · deeper: the chats skill
+more: cass sessions --workspace $HOME/code/agentvoice --limit 10 --json · deeper: the chats skill
 ```
 
 The contract, shared with the other `agent*` state dumps: workspace-scoped,
