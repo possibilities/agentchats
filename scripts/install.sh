@@ -5,8 +5,8 @@ set -euo pipefail
 # Agentchats installer: installs cass (coding_agent_session_search) and
 # prepares its index so Claude Code, Codex, and Pi sessions are searchable.
 #
-# Funk invokes this from libexec/install-ai-tools with --install. The script
-# is fix-forward and safe to rerun: the binary converges on the latest
+# AgentStart invokes this from scripts/install-agent-clis with --install. The
+# script is fix-forward and safe to rerun: the binary converges on the latest
 # upstream release and the index refreshes incrementally once it exists.
 
 upstream_owner=Dicklesworthstone
@@ -35,7 +35,7 @@ die() {
 
 # The upstream installer resolves "latest" through the anonymous GitHub API,
 # which allows 60 requests an hour per address; a few reruns exhaust that and
-# fail the run over a transient external limit. Funk installs and
+# fail the run over a transient external limit. The machine installs and
 # authenticates gh (5000 an hour), so resolve the tag here and hand it over.
 # With --version supplied the installer skips the API entirely.
 resolve_version() {

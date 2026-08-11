@@ -16,23 +16,22 @@ three things and nothing else:
   cass itself remains the search surface.
 - `skills/chats/` — the source of the `chats` agent skill, the runbook that
   teaches agents to wield cass expertly. The `skills/<name>/` layout is the
-  convention Funk's per-checkout skill scanner discovers.
+  convention AgentStart's per-checkout skill scan discovers.
 
-Funk (`~/code/funk`) is the sole owner of AI-stack installation and invokes
-both from `libexec/install-ai-tools`: the installer through this repository's
-`scripts/install.sh --install`, the skill through the `agent*` checkout
-skill scan (`libexec/install-code-skills`), which ships every
-`skills/<name>/` directory globally. Do not add a second installation or
-synchronization path here.
+AgentStart (`~/code/agentstart`) owns AI-stack installation and invokes both:
+the installer through this repository's `scripts/install.sh --install`
+(`scripts/install-agent-clis`), the skill through the `agent*` checkout skill
+scan (`scripts/sync-skills`), which ships every `skills/<name>/` directory
+globally. Do not add a second installation or synchronization path here.
 
 ## Conventions
 
-- The installer follows Funk's helper style: bash, `set -euo pipefail`, a
-  `die` helper, `--check` prints the plan without changing the system.
-  A machine without this checkout is a skip inside Funk, not a failure; a
-  present checkout that fails to install is a real error and propagates.
+- The installer follows the fleet's helper style: bash, `set -euo pipefail`,
+  a `die` helper, `--check` prints the plan without changing the system.
+  A machine without this checkout is a skip inside AgentStart, not a failure;
+  a present checkout that fails to install is a real error and propagates.
 - cass tracks the latest upstream release deliberately, like every agent CLI
-  Funk installs. The release tag is resolved with the authenticated GitHub
+  the fleet installs. The release tag is resolved with the authenticated GitHub
   CLI first so reruns never exhaust the anonymous API limit.
 - The index prepares incrementally when healthy and rebuilds fully when
   missing, unhealthy, or after a failed incremental refresh. Freshness
@@ -55,14 +54,15 @@ synchronization path here.
 
 ## After changing this repository
 
-- Installer changes: rerun `scripts/install.sh --install` here, then Funk's
-  convergence check (`~/code/funk/libexec/install-ai-tools`).
+- Installer changes: rerun `scripts/install.sh --install` here, then
+  AgentStart's convergence check (`~/code/agentstart/scripts/install.sh
+  --install`).
 - CLI changes: the `~/.local/bin/agentchats` link points into this checkout,
   so edits are live once the link exists; `scripts/install.sh --install`
   creates it. Exercise `bin/agentchats state` against a workspace with
   sessions, an empty one (must print nothing), and a PATH without cass.
-- Skill changes: reinstall globally with Funk's scanner
-  (`~/code/funk/libexec/install-code-skills`) or directly with
+- Skill changes: reinstall globally with AgentStart's scan
+  (`~/code/agentstart/scripts/sync-skills`) or directly with
   `npx --yes skills add "$HOME/code/agentchats" --agent codex claude-code
   pi --skill chats --global --yes`, then confirm the installed copies match
   this checkout.
@@ -73,7 +73,7 @@ This checkout is one of the agent* fleet under `~/code`. Shared machinery
 lives in two siblings, and some changes here must cascade:
 
 - Skills under `skills/<name>/` ship globally through AgentStart's scan
-  (`~/code/agentstart/scripts/sync-skills`, run six-hourly by Funk's
+  (`~/code/agentstart/scripts/sync-skills`, run six-hourly by the scheduled
   updater): a SKILL.md edit is live within six hours, or on demand by
   running that script. Whether a new skill earns a TOOLS.md advertisement
   line is a deliberate decision — `agentwiki get tool-advertisement-policy`.

@@ -30,9 +30,9 @@ Three pieces do that:
 
 ## Installation
 
-Funk owns installation. A full `~/code/funk/install` (or
-`~/code/funk/libexec/install-ai-tools`) runs the cass installer, and Funk's
-per-checkout skill scan ships `skills/chats/` globally for Codex, Claude
+AgentStart owns installation. A full `~/code/agentstart/scripts/install.sh
+--install` runs the cass installer, and its per-checkout skill scan
+(`scripts/sync-skills`) ships `skills/chats/` globally for Codex, Claude
 Code, and Pi.
 
 Directly, from this checkout:
@@ -71,8 +71,8 @@ themselves is cass in robot mode — the chats skill is that runbook.
 ## Layout
 
 ```
-scripts/install.sh     cass installation contract (Funk calls this)
+scripts/install.sh     cass installation contract (AgentStart calls this)
 bin/agentchats         the agentchats CLI (state), linked into ~/.local/bin
-skills/chats/SKILL.md  the chats skill (Funk's skill scan ships this)
+skills/chats/SKILL.md  the chats skill (AgentStart's skill scan ships it)
 skills/chats/agents/   per-agent skill manifest (openai.yaml)
 ```

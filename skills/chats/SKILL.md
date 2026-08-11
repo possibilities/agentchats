@@ -362,7 +362,7 @@ five-second re-sync.
   `cass models backfill`; `cass models status --json` reports state.
   Everything works lexically without it.
 - Installed and index-prepared by `~/code/agentchats/scripts/install.sh
-  --install` (Funk runs it); rerunning it is always safe.
+  --install` (AgentStart runs it); rerunning it is always safe.
 
 ## Anti-patterns
 
