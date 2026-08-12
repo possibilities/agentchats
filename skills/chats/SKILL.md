@@ -187,7 +187,7 @@ cass search "" --robot --workspace "$(pwd)" --days 7 --aggregate date,agent
 ```
 
 Then `cass resume <source_path> --shell` prints the native resume command
-for that session's harness (e.g. `claude --resume <id>`) — hand it to the
+for that session's harness — claude, codex, pi, or another — hand it to the
 user rather than executing a nested agent yourself.
 
 **Cross-agent archaeology.** What did *any* agent conclude about X?

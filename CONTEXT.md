@@ -5,7 +5,7 @@ and searches local coding-agent session history. Installed by this
 repository's `scripts/install.sh`, always invoked by agents in robot mode.
 _Avoid_: CASS-the-service, session search engine.
 
-**chats** — this repository's agent skill (`/chats`): the runbook that
+**chats** — this repository's agent skill: the runbook that
 teaches agents to wield cass. The skill is the guidance; cass is the tool.
 _Avoid_: cass skill, history skill.
 
