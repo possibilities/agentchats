@@ -1,0 +1,7 @@
+{"timestamp":"2026-08-15T11:00:00.000Z","type":"session_meta","payload":{"id":"cx1","cwd":"/tmp/proj","cli_version":"0.0.0"}}
+{"timestamp":"2026-08-15T11:00:01.000Z","type":"turn_context","payload":{"cwd":"/tmp/proj","model":"gpt-5.6"}}
+{"timestamp":"2026-08-15T11:00:02.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"List the files here"}]}}
+{"timestamp":"2026-08-15T11:00:04.000Z","type":"response_item","payload":{"type":"reasoning","summary":[{"type":"summary_text","text":"**Scanning the directory**\n\nA quick listing will do."}],"content":[],"encrypted_content":"x"}}
+{"timestamp":"2026-08-15T11:00:05.000Z","type":"response_item","payload":{"type":"custom_tool_call","name":"exec","call_id":"c1","input":"ls -la","status":"completed"}}
+{"timestamp":"2026-08-15T11:00:06.000Z","type":"response_item","payload":{"type":"custom_tool_call_output","call_id":"c1","output":[{"type":"input_text","text":"a.txt\nb.txt"}]}}
+{"timestamp":"2026-08-15T11:00:08.000Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Two files: a.txt and b.txt."}]}}

@@ -2,18 +2,25 @@
 
 ## What this repository is
 
-Agentchats makes the local coding-agent session history searchable. It owns
-three things and nothing else:
+Agentchats makes the local coding-agent session history searchable and
+viewable. It owns four things and nothing else:
 
 - `scripts/install.sh` — the installation contract for cass
   (Dicklesworthstone/coding_agent_session_search): install or upgrade the
   binary from the upstream checksummed release, link the `agentchats` CLI,
-  then build or refresh the index so Claude Code, Codex, and Pi sessions are
-  searchable.
+  prepare the viewer's bun dependencies, then build or refresh the index so
+  Claude Code, Codex, and Pi sessions are searchable.
 - `bin/agentchats` — the small CLI this repository owns on top of cass,
   linked editable into `~/.local/bin`. `agentchats state` is the
   workspace-scoped, budget-capped bearings dump agents run to re-orient;
-  cass itself remains the search surface.
+  `agentchats view` opens the transcript viewer; cass itself remains the
+  search surface.
+- `viewer/` — the read-only live transcript viewer (`agentchats view`): a
+  bun + @opentui/solid app that renders Claude Code, Codex, and Pi session
+  files with opencode's session renderer, vendored. Normalizers turn each
+  store's native JSONL into opencode's v1 message/part schema; cass supplies
+  discovery (`cass sessions --json`), the native files supply fidelity, and
+  a follow tail streams live sessions message by message.
 - `skills/chats/` — the source of the `chats` agent skill, the runbook that
   teaches agents to wield cass expertly. The `skills/<name>/` layout is the
   convention AgentStart's per-checkout skill scan discovers.
@@ -51,12 +58,26 @@ globally. Do not add a second installation or synchronization path here.
   scopes and dedups client-side because cass falls back to an unscoped
   listing for an unmatched workspace and an index can carry duplicate rows
   for one session file.
+- The viewer is a fleet TUI under the revised (chromeless, command-palette)
+  fleet-tui-design contract, skinned with Signal Room tokens through
+  opencode's own theme type. `viewer/src/vendor/` is vendored from opencode
+  at the commit named in each file's header — resync deliberately against
+  that pin, never restyle in passing; deliberate divergences are marked
+  `viewer:` inline. The normalizers are the durable core: they must keep
+  decoding cleanly against opencode's v1 Effect schemas
+  (`viewer/spike/validate.ts --newest` is the gate, run from a bun-installed
+  ~/src/opencode checkout).
 
 ## After changing this repository
 
 - Installer changes: rerun `scripts/install.sh --install` here, then
   AgentStart's convergence check (`~/code/agentstart/scripts/install.sh
   --install`).
+- Viewer changes: `cd viewer && bun run typecheck && bun test` (normalizer
+  fidelity plus char-frame contract tests against the real renderer), then
+  exercise `agentchats view` on a real session per store. After a normalizer
+  or vendored-type change, rerun the schema gate:
+  `bun viewer/spike/validate.ts --newest`.
 - CLI changes: the `~/.local/bin/agentchats` link points into this checkout,
   so edits are live once the link exists; `scripts/install.sh --install`
   creates it. Exercise `bin/agentchats state` against a workspace with

@@ -1,0 +1,9 @@
+{"type":"session","id":"pi1","cwd":"/tmp/proj","timestamp":"2026-08-15T12:00:00.000Z","version":1}
+{"type":"session_info","id":"e1","name":"probe run","timestamp":"2026-08-15T12:00:00.100Z"}
+{"type":"model_change","id":"e2","provider":"anthropic","modelId":"claude-sonnet-5","timestamp":"2026-08-15T12:00:00.200Z"}
+{"type":"message","id":"e3","message":{"role":"user","content":[{"type":"text","text":"run ls then fix x.ts"}],"timestamp":1786000000000}}
+{"type":"message","id":"e4","message":{"role":"assistant","content":[{"type":"thinking","thinking":"They want a listing first."},{"type":"toolCall","id":"tc1","name":"bash","arguments":{"command":"ls"}}],"model":"claude-sonnet-5","provider":"anthropic","stopReason":"toolUse","usage":{"input":50,"output":10},"timestamp":1786000002000}}
+{"type":"message","id":"e5","message":{"role":"toolResult","toolCallId":"tc1","toolName":"bash","content":[{"type":"text","text":"a.txt"}],"isError":false,"timestamp":1786000003000}}
+{"type":"message","id":"e6","message":{"role":"assistant","content":[{"type":"toolCall","id":"tc2","name":"edit","arguments":{"path":"x.ts","oldText":"const a = 1\nconst b = 2","newText":"const a = 1\nconst b = 3"}}],"model":"claude-sonnet-5","provider":"anthropic","stopReason":"toolUse","timestamp":1786000004000}}
+{"type":"message","id":"e7","message":{"role":"toolResult","toolCallId":"tc2","toolName":"edit","content":[{"type":"text","text":"ok"}],"isError":false,"timestamp":1786000005000}}
+{"type":"message","id":"e8","message":{"role":"assistant","content":[{"type":"text","text":"Listed and fixed."}],"model":"claude-sonnet-5","provider":"anthropic","stopReason":"stop","usage":{"input":80,"output":12},"timestamp":1786000006000}}
