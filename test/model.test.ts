@@ -6,6 +6,7 @@ import {
   buildResultRows,
   createState,
   moveSelection,
+  scopeLabel,
   scopeWorkspace,
   type SearchState,
   toggleScope,
@@ -53,8 +54,10 @@ describe("selection discipline", () => {
   test("scope toggles between the project and everywhere", () => {
     const state = stateWith([]);
     expect(scopeWorkspace(state)).toBe("/Users/op/code/alpha");
+    expect(scopeLabel(state)).toBe("alpha");
     toggleScope(state);
     expect(scopeWorkspace(state)).toBeNull();
+    expect(scopeLabel(state)).toBe("everywhere");
     toggleScope(state);
     expect(scopeWorkspace(state)).toBe("/Users/op/code/alpha");
   });

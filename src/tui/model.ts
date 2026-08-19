@@ -63,6 +63,12 @@ export function scopeWorkspace(state: SearchState): string | null {
   return state.scope === "project" ? state.workspace : null;
 }
 
+/** The scope readout beside the query: what the operator recognizes — the
+ * project's own name when scoped, "everywhere" when global. */
+export function scopeLabel(state: SearchState): string {
+  return state.scope === "project" ? basename(state.workspace) : "everywhere";
+}
+
 function truncate(text: string, max: number): string {
   if (text.length <= max) return text;
   if (max <= 1) return GLYPHS.ellipsis;

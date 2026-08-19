@@ -14,6 +14,7 @@ import {
   buildResultRows,
   createState,
   moveSelection,
+  scopeLabel,
   scopeWorkspace,
   toggleScope,
 } from "./model.ts";
@@ -43,9 +44,10 @@ interface QueryBinding {
 }
 
 /** The query field's keymap: the widget's default line-editing set with
- * enter submitting the pick instead of inserting, and ctrl+k released to
- * the command palette — the fleet chord outranks kill-to-line-end in a
- * field this short. */
+ * enter submitting the pick instead of inserting, and two chords released
+ * to the app — ctrl+k for the command palette (the fleet chord outranks
+ * kill-to-line-end in a field this short) and ctrl+g for the scope toggle,
+ * which must work while typing because printable keys are the field's. */
 export function queryKeyBindings(defaults: readonly QueryBinding[]): QueryBinding[] {
   return [
     ...defaults.filter(
@@ -54,7 +56,7 @@ export function queryKeyBindings(defaults: readonly QueryBinding[]): QueryBindin
           ((binding.name === "return" || binding.name === "kpenter") &&
             binding.shift !== true &&
             binding.action === "newline") ||
-          (binding.name === "k" && binding.ctrl === true)
+          ((binding.name === "k" || binding.name === "g") && binding.ctrl === true)
         ),
     ),
     { name: "return", action: "submit" },
@@ -141,7 +143,7 @@ export async function runSearch(
     onMouseUp: (event) => {
       event.stopPropagation();
       if (commands.isOpen()) {
-        commands.close();
+        dismissPalette();
         paint();
       }
     },
@@ -165,7 +167,7 @@ export async function runSearch(
     onMouseUp: (event) => {
       event.stopPropagation();
       if (commands.isOpen()) {
-        commands.close();
+        dismissPalette();
         paint();
       }
     },
@@ -191,8 +193,18 @@ export async function runSearch(
     placeholderColor: SIGNAL_ROOM.muted,
     keyBindings: queryKeyBindings(core.defaultTextareaKeyBindings),
   });
+  // The scope readout, right of the query: the project's name when scoped,
+  // "everywhere" when global — the indicator for what a search covers.
+  const scopeTag = new core.TextRenderable(renderer, {
+    id: "search-scope",
+    content: "",
+    height: 1,
+    flexShrink: 0,
+    fg: SIGNAL_ROOM.muted,
+  });
   queryRow.add(rail);
   queryRow.add(query);
+  queryRow.add(scopeTag);
   frame.add(queryRow);
   // The result list is a column of per-row renderables rather than one text
   // blob, so every row is a pointer target the renderer can hit-test.
@@ -220,6 +232,19 @@ export async function runSearch(
     { title: " COMMANDS ", empty: "no matching command" },
   );
   renderer.root.add(commands.root);
+
+  // The palette is modal to the keyboard, and the renderer routes keys to
+  // the focused textarea regardless — so opening the palette blurs the
+  // query (else enter reaches the field's submit and commits a pick through
+  // a closed palette), and every close path hands focus back.
+  const openPalette = (): void => {
+    query.blur();
+    commands.open();
+  };
+  const dismissPalette = (): void => {
+    commands.close();
+    if (!closed) query.focus();
+  };
 
   const lineToStyled = (line: Line): InstanceType<typeof core.StyledText> => {
     const chunks: ReturnType<typeof core.bold>[] = [];
@@ -345,17 +370,22 @@ export async function runSearch(
     paint();
   };
 
+  const toggleScopeAndSearch = (): void => {
+    toggleScope(state);
+    // A palette pick lands here after the overlay closed itself; typing
+    // must keep working, so the query takes focus back.
+    if (!closed) query.focus();
+    refresh();
+  };
+
   const commandItems = () => [
     { id: "resume", key: "⏎", label: "resume the selected session", onRun: () => commit() },
     {
       id: "scope",
-      key: "G",
+      key: "⌃G",
       label: state.scope === "project" ? "search all workspaces" : "search this project only",
       meta: state.scope === "project" ? "global" : basename(state.workspace),
-      onRun: () => {
-        toggleScope(state);
-        refresh();
-      },
+      onRun: () => toggleScopeAndSearch(),
     },
     { id: "quit", key: "ESC", label: "quit without resuming", onRun: () => shutdown(0) },
   ];
@@ -368,8 +398,10 @@ export async function runSearch(
     const rows = renderer.height || process.stderr.rows || 24;
     rail.fg = state.searching ? SIGNAL_ROOM.local : SIGNAL_ROOM.accent;
     rail.content = state.searching ? GLYPHS.busy : GLYPHS.inputRail;
-    // Frame padding is 2+2; the rail is 2 more.
-    query.width = Math.max(8, columns - 6);
+    const scope = scopeLabel(state);
+    scopeTag.content = `  ${scope}`;
+    // Frame padding is 2+2; the rail is 2 more; the scope tag takes its own.
+    query.width = Math.max(8, columns - 6 - (scope.length + 2));
     const visible = Math.max(3, rows - 6);
     const resultRows = buildResultRows(state, Math.max(24, columns - 4), visible);
     const nextSignature = JSON.stringify(resultRows);
@@ -389,7 +421,7 @@ export async function runSearch(
           onMouseUp: (event) => {
             event.stopPropagation();
             if (commands.isOpen()) {
-              commands.close();
+              dismissPalette();
               paint();
               return;
             }
@@ -458,14 +490,21 @@ export async function runSearch(
     }
     if (commands.isOpen()) {
       if (key.ctrl && key.name === "k") {
-        commands.close();
+        dismissPalette();
         return;
       }
       commands.handleKey(key);
+      // The overlay may have closed itself (escape, or enter running an
+      // item); focus follows it back to the query either way.
+      if (!commands.isOpen() && !closed) query.focus();
       return;
     }
     if (key.ctrl && key.name === "k") {
-      commands.open();
+      openPalette();
+      return;
+    }
+    if (key.ctrl && key.name === "g") {
+      toggleScopeAndSearch();
       return;
     }
     if (key.name === "escape") {
