@@ -9,6 +9,7 @@ const DEFAULTS: Binding[] = [
   { name: "return", shift: true, action: "newline" },
   { name: "k", ctrl: true, action: "delete-to-line-end" as Binding["action"] },
   { name: "g", ctrl: true, action: "abort" as Binding["action"] },
+  { name: "t", ctrl: true, action: "transpose" as Binding["action"] },
   { name: "a", ctrl: true, action: "move-to-line-start" as Binding["action"] },
 ];
 
@@ -22,10 +23,11 @@ describe("queryKeyBindings", () => {
     expect(bindings.some((b) => b.name === "kpenter" && b.action === "submit")).toBe(true);
   });
 
-  test("ctrl+k and ctrl+g are released to the app's own chords", () => {
+  test("ctrl+k, ctrl+g, and ctrl+t are released to the app's own chords", () => {
     const bindings = queryKeyBindings(DEFAULTS);
     expect(bindings.some((b) => b.name === "k" && b.ctrl === true)).toBe(false);
     expect(bindings.some((b) => b.name === "g" && b.ctrl === true)).toBe(false);
+    expect(bindings.some((b) => b.name === "t" && b.ctrl === true)).toBe(false);
   });
 
   test("the rest of the line-editing set survives", () => {

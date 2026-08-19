@@ -18,6 +18,8 @@ function row(overrides: Partial<SessionRow>): SessionRow {
     when: "2026-08-12 02:54",
     snippet: null,
     line: null,
+    slug: null,
+    excerpt: null,
     ...overrides,
   };
 }

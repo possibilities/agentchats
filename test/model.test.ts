@@ -5,6 +5,7 @@ import {
   applyRows,
   buildResultRows,
   createState,
+  cycleWindow,
   moveSelection,
   scopeLabel,
   scopeWorkspace,
@@ -21,6 +22,8 @@ function sessionRow(index: number, overrides: Partial<SessionRow> = {}): Session
     when: "2026-08-12 02:54",
     snippet: null,
     line: null,
+    slug: null,
+    excerpt: null,
     ...overrides,
   };
 }
@@ -82,6 +85,37 @@ describe("buildResultRows", () => {
     expect(text).not.toContain("pi_agent");
     expect(text).toContain("alpha");
     expect(text).toContain("session 0");
+  });
+
+  test("a described row shows the slug first, then the excerpt; title only as fallback", () => {
+    const described = stateWith([
+      sessionRow(0, { slug: "queue fix", excerpt: "the queue drops messages", title: "<command-message>collab</command-message>" }),
+    ]);
+    const text = textRows(described).join("\n");
+    expect(text).toContain("queue fix");
+    expect(text).toContain("the queue drops messages");
+    expect(text).not.toContain("<command-message>");
+    expect(text.indexOf("queue fix")).toBeLessThan(text.indexOf("the queue drops"));
+
+    const excerptOnly = stateWith([
+      sessionRow(0, { excerpt: "just the prompt", title: "<command-message>x</command-message>" }),
+    ]);
+    expect(textRows(excerptOnly).join("")).toContain("just the prompt");
+    expect(textRows(excerptOnly).join("")).not.toContain("command-message");
+
+    const bare = stateWith([sessionRow(0, { title: "raw cass title" })]);
+    expect(textRows(bare).join("")).toContain("raw cass title");
+  });
+
+  test("the window rides the scope label", () => {
+    const state = stateWith([]);
+    expect(scopeLabel(state)).toBe("alpha");
+    cycleWindow(state);
+    expect(scopeLabel(state)).toBe("alpha · today");
+    cycleWindow(state);
+    expect(scopeLabel(state)).toBe("alpha · week");
+    cycleWindow(state);
+    expect(scopeLabel(state)).toBe("alpha");
   });
 
   test("the selected row's snippet renders as a quiet evidence line", () => {

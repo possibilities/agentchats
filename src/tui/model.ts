@@ -1,4 +1,4 @@
-import type { SessionRow } from "./cass.ts";
+import type { SessionRow, TimeWindow } from "./cass.ts";
 import { GLYPHS, type Line, type Span } from "./theme.ts";
 
 /**
@@ -12,6 +12,8 @@ export type Scope = "project" | "global";
 export interface SearchState {
   query: string;
   scope: Scope;
+  /** How far back a search reaches; cycled with ctrl+t. */
+  window: TimeWindow;
   /** The context project directory: the "project" scope. */
   workspace: string;
   /** What the rows currently answer: recent sessions or a search. */
@@ -27,6 +29,7 @@ export function createState(workspace: string, query: string): SearchState {
   return {
     query,
     scope: "project",
+    window: "all",
     workspace,
     source: "recent",
     rows: [],
@@ -64,9 +67,15 @@ export function scopeWorkspace(state: SearchState): string | null {
 }
 
 /** The scope readout beside the query: what the operator recognizes — the
- * project's own name when scoped, "everywhere" when global. */
+ * project's own name when scoped, "everywhere" when global — plus the time
+ * window when one narrows the search. */
 export function scopeLabel(state: SearchState): string {
-  return state.scope === "project" ? basename(state.workspace) : "everywhere";
+  const place = state.scope === "project" ? basename(state.workspace) : "everywhere";
+  return state.window === "all" ? place : `${place} ${GLYPHS.sep} ${state.window}`;
+}
+
+export function cycleWindow(state: SearchState): void {
+  state.window = state.window === "all" ? "today" : state.window === "today" ? "week" : "all";
 }
 
 function truncate(text: string, max: number): string {
@@ -158,11 +167,25 @@ export function buildResultRows(
     const remaining = Math.max(8, width - used);
     const project = truncate(basename(row.workspace), Math.min(18, Math.floor(remaining / 3)));
     spans.push({ text: `${project}  `, token: isSelected ? "text" : "muted" });
-    spans.push({
-      text: truncate(row.title, Math.max(4, remaining - project.length - 2)),
-      token: isSelected ? "text" : "muted",
-      ...(isSelected ? { bold: true } : {}),
-    });
+    // The row's subject: the fleet's slug when naming ever computed one,
+    // brighter than the excerpt beside it; otherwise the first-prompt
+    // excerpt, and only as a last resort cass's raw title.
+    let budget = Math.max(4, remaining - project.length - 2);
+    if (row.slug !== null) {
+      const slug = truncate(row.slug, Math.max(4, Math.min(36, budget)));
+      spans.push({ text: slug, token: "text", ...(isSelected ? { bold: true } : {}) });
+      budget -= slug.length;
+      if (row.excerpt !== null && budget > 8) {
+        spans.push({ text: `  ${GLYPHS.sep} `, token: "faint" });
+        spans.push({ text: truncate(row.excerpt, budget - 4), token: "muted" });
+      }
+    } else {
+      spans.push({
+        text: truncate(row.excerpt ?? row.title, budget),
+        token: isSelected ? "text" : "muted",
+        ...(isSelected ? { bold: true } : {}),
+      });
+    }
     rows.push({ index, spans });
   });
 

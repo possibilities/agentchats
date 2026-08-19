@@ -17,6 +17,11 @@ export interface SessionRow {
   when: string;
   snippet: string | null;
   line: number | null;
+  /** Enrichment from `agentsurface conversation describe`: the fleet's
+   * stored slug and first-prompt excerpt; null until described, and for
+   * connectors the fleet does not name. */
+  slug: string | null;
+  excerpt: string | null;
 }
 
 export interface CassRunner {
@@ -57,14 +62,29 @@ export function spawnRunner(binary: string): CassRunner {
   };
 }
 
-export function searchArgs(query: string, scope: string | null, limit: number): string[] {
+export type TimeWindow = "all" | "today" | "week";
+
+export function searchArgs(
+  query: string,
+  scope: string | null,
+  limit: number,
+  window: TimeWindow = "all",
+): string[] {
   const args = ["search", query, "--json", "--limit", String(limit), "--mode", "hybrid"];
+  if (window === "today") args.push("--days", "1");
+  if (window === "week") args.push("--days", "7");
   if (scope !== null) args.push("--workspace", scope);
   return args;
 }
 
-export function sessionsArgs(scope: string | null, limit: number): string[] {
+export function sessionsArgs(
+  scope: string | null,
+  limit: number,
+  window: TimeWindow = "all",
+): string[] {
   const args = ["sessions", "--json", "--limit", String(limit)];
+  if (window === "today") args.push("--since", "1d");
+  if (window === "week") args.push("--since", "7d");
   if (scope !== null) args.push("--workspace", scope);
   return args;
 }
@@ -110,6 +130,8 @@ export function parseHits(stdout: string, scope: string | null): SessionRow[] {
       when: stamp(record["created_at"]),
       snippet: text(record["snippet"]) || null,
       line: typeof record["line_number"] === "number" ? record["line_number"] : null,
+      slug: null,
+      excerpt: null,
     });
   }
   return rows;
@@ -143,6 +165,8 @@ export function parseSessions(stdout: string, scope: string | null): SessionRow[
       when: stamp(modified),
       snippet: null,
       line: null,
+      slug: null,
+      excerpt: null,
       modified,
     });
   }

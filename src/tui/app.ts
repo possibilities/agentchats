@@ -7,12 +7,14 @@ import {
   sessionsArgs,
   spawnRunner,
 } from "./cass.ts";
+import { applyDescriptions, fetchDescriptions } from "./describe.ts";
 import { assertHostedStdout, buildResumeDirective, directiveLine } from "./directive.ts";
 import {
   applyError,
   applyRows,
   buildResultRows,
   createState,
+  cycleWindow,
   moveSelection,
   scopeLabel,
   scopeWorkspace,
@@ -46,8 +48,9 @@ interface QueryBinding {
 /** The query field's keymap: the widget's default line-editing set with
  * enter submitting the pick instead of inserting, and two chords released
  * to the app — ctrl+k for the command palette (the fleet chord outranks
- * kill-to-line-end in a field this short) and ctrl+g for the scope toggle,
- * which must work while typing because printable keys are the field's. */
+ * kill-to-line-end in a field this short), ctrl+g for the scope toggle,
+ * and ctrl+t for the time window: the toggles must work while typing
+ * because printable keys are the field's. */
 export function queryKeyBindings(defaults: readonly QueryBinding[]): QueryBinding[] {
   return [
     ...defaults.filter(
@@ -56,7 +59,8 @@ export function queryKeyBindings(defaults: readonly QueryBinding[]): QueryBindin
           ((binding.name === "return" || binding.name === "kpenter") &&
             binding.shift !== true &&
             binding.action === "newline") ||
-          ((binding.name === "k" || binding.name === "g") && binding.ctrl === true)
+          ((binding.name === "k" || binding.name === "g" || binding.name === "t") &&
+            binding.ctrl === true)
         ),
     ),
     { name: "return", action: "submit" },
@@ -116,7 +120,8 @@ export async function runSearch(
   // Off process.stdout the renderer sees no SIGWINCH itself; resize() is
   // documented for exactly this externally-driven case.
   const onResize = (): void => {
-    renderer.resize(process.stderr.columns ?? 80, process.stderr.rows ?? 24);
+    // `||`, not `??`: a headless pty reports 0×0, which is no size at all.
+    renderer.resize(process.stderr.columns || 80, process.stderr.rows || 24);
     paint();
   };
 
@@ -299,8 +304,8 @@ export async function runSearch(
     const source = trimmed === "" ? "recent" : "search";
     const args =
       trimmed === ""
-        ? sessionsArgs(scope, RECENT_LIMIT)
-        : searchArgs(trimmed, scope, SEARCH_LIMIT);
+        ? sessionsArgs(scope, RECENT_LIMIT, state.window)
+        : searchArgs(trimmed, scope, SEARCH_LIMIT, state.window);
     void runner(args).then((result) => {
       if (closed || current !== generation) return;
       if (!result.ok) {
@@ -313,6 +318,13 @@ export async function runSearch(
             ? parseSessions(result.stdout, scope)
             : parseHits(result.stdout, scope),
         );
+        // Enrichment arrives late and only improves rows already shown, so
+        // it rides behind the paint and honors the same generation.
+        void fetchDescriptions(state.rows, env).then((descriptions) => {
+          if (closed || current !== generation || descriptions.size === 0) return;
+          applyDescriptions(state.rows, descriptions);
+          paint();
+        });
       }
       paint();
     });
@@ -378,6 +390,12 @@ export async function runSearch(
     refresh();
   };
 
+  const cycleWindowAndSearch = (): void => {
+    cycleWindow(state);
+    if (!closed) query.focus();
+    refresh();
+  };
+
   const commandItems = () => [
     { id: "resume", key: "⏎", label: "resume the selected session", onRun: () => commit() },
     {
@@ -387,6 +405,13 @@ export async function runSearch(
       meta: state.scope === "project" ? "global" : basename(state.workspace),
       onRun: () => toggleScopeAndSearch(),
     },
+    {
+      id: "window",
+      key: "⌃T",
+      label: "cycle the time window",
+      meta: state.window,
+      onRun: () => cycleWindowAndSearch(),
+    },
     { id: "quit", key: "ESC", label: "quit without resuming", onRun: () => shutdown(0) },
   ];
 
@@ -394,7 +419,7 @@ export async function runSearch(
   // churns renderables.
   let bodySignature = "";
   const paint = (): void => {
-    const columns = process.stderr.columns ?? 80;
+    const columns = process.stderr.columns || renderer.width || 80;
     const rows = renderer.height || process.stderr.rows || 24;
     rail.fg = state.searching ? SIGNAL_ROOM.local : SIGNAL_ROOM.accent;
     rail.content = state.searching ? GLYPHS.busy : GLYPHS.inputRail;
@@ -505,6 +530,10 @@ export async function runSearch(
     }
     if (key.ctrl && key.name === "g") {
       toggleScopeAndSearch();
+      return;
+    }
+    if (key.ctrl && key.name === "t") {
+      cycleWindowAndSearch();
       return;
     }
     if (key.name === "escape") {

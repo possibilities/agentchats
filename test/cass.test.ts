@@ -20,6 +20,15 @@ describe("searchArgs / sessionsArgs", () => {
     expect(sessionsArgs(WS, 20)).toContain("--workspace");
     expect(sessionsArgs(null, 20)).not.toContain("--workspace");
   });
+
+  test("the time window narrows both commands", () => {
+    expect(searchArgs("q", null, 30, "today").join(" ")).toContain("--days 1");
+    expect(searchArgs("q", null, 30, "week").join(" ")).toContain("--days 7");
+    expect(searchArgs("q", null, 30, "all").join(" ")).not.toContain("--days");
+    expect(sessionsArgs(null, 20, "today").join(" ")).toContain("--since 1d");
+    expect(sessionsArgs(null, 20, "week").join(" ")).toContain("--since 7d");
+    expect(sessionsArgs(null, 20, "all").join(" ")).not.toContain("--since");
+  });
 });
 
 describe("parseHits", () => {
