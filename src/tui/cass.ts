@@ -211,10 +211,14 @@ export function parseSessions(stdout: string, scope: string | null): SessionRow[
 }
 
 const ROLLOUT_PREFIX_BYTES = 64 * 1024;
+const NO_AUXILIARY_ORIGINATORS = new Set<string>();
 
-/** `undefined` means no readable session metadata; `null` is a legacy
- * session_meta with no thread source. */
-export function rolloutThreadSource(text: string): string | null | undefined {
+export interface RolloutMetadata {
+  threadSource: string | null;
+  originator: string | null;
+}
+
+export function rolloutMetadata(text: string): RolloutMetadata | undefined {
   for (const line of text.split("\n")) {
     if (line.trim() === "") continue;
     let entry: unknown;
@@ -229,9 +233,19 @@ export function rolloutThreadSource(text: string): string | null | undefined {
     if (typeof payload !== "object" || payload === null) return undefined;
     const metadata = payload as Record<string, unknown>;
     const source = metadata["thread_source"] ?? metadata["threadSource"];
-    return typeof source === "string" && source !== "" ? source : null;
+    const originator = metadata["originator"];
+    return {
+      threadSource: typeof source === "string" && source !== "" ? source : null,
+      originator: typeof originator === "string" && originator !== "" ? originator : null,
+    };
   }
   return undefined;
+}
+
+/** `undefined` means no readable session metadata; `null` is a legacy
+ * session_meta with no thread source. */
+export function rolloutThreadSource(text: string): string | null | undefined {
+  return rolloutMetadata(text)?.threadSource;
 }
 
 async function rolloutPrefix(path: string): Promise<string> {
@@ -244,17 +258,23 @@ async function rolloutPrefix(path: string): Promise<string> {
   return await file.slice(0, ROLLOUT_PREFIX_BYTES).text();
 }
 
-/** Full harness Codex sessions identify themselves as `user`. Any other
- * explicit thread source belongs to an app-server, realtime, or child-thread
- * surface. Missing metadata fails open so old or temporarily unreadable
- * sessions never disappear from the picker. */
-export async function classifySession(row: SessionRow): Promise<SessionClass> {
+/** Full harness Codex sessions identify themselves as `user`, which always
+ * wins — including in a workspace also used by an auxiliary producer. Any
+ * other explicit source is auxiliary. Configured originators classify only
+ * legacy metadata with no source; unreadable metadata fails open. */
+export async function classifySession(
+  row: SessionRow,
+  auxiliaryCodexOriginators: ReadonlySet<string> = NO_AUXILIARY_ORIGINATORS,
+): Promise<SessionClass> {
   if (row.agent !== "codex") return "full-harness";
   try {
-    const source = rolloutThreadSource(await rolloutPrefix(row.path));
-    if (source === undefined) return "unknown";
-    if (source === null || source === "user") return "full-harness";
-    return "auxiliary";
+    const metadata = rolloutMetadata(await rolloutPrefix(row.path));
+    if (metadata === undefined) return "unknown";
+    if (metadata.threadSource === "user") return "full-harness";
+    if (metadata.threadSource !== null) return "auxiliary";
+    return metadata.originator !== null && auxiliaryCodexOriginators.has(metadata.originator)
+      ? "auxiliary"
+      : "full-harness";
   } catch {
     return "unknown";
   }

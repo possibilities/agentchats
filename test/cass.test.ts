@@ -9,6 +9,7 @@ import {
   loadVisibleRows,
   parseHits,
   parseSessions,
+  rolloutMetadata,
   rolloutThreadSource,
   searchArgs,
   type SessionClassifier,
@@ -65,8 +66,10 @@ function row(path: string, agent = "codex"): SessionRow {
 const temp = mkdtempSync(join(tmpdir(), "agentchats-classify-"));
 afterAll(() => rmSync(temp, { recursive: true, force: true }));
 
-function rollout(path: string, threadSource: string | null): string {
-  const payload = threadSource === null ? { id: path } : { id: path, thread_source: threadSource };
+function rollout(path: string, threadSource: string | null, originator?: string): string {
+  const payload: Record<string, string> = { id: path };
+  if (threadSource !== null) payload["thread_source"] = threadSource;
+  if (originator !== undefined) payload["originator"] = originator;
   return `${JSON.stringify({ type: "session_meta", payload })}\n${JSON.stringify({ type: "response_item", payload: { role: "user" } })}\n`;
 }
 
@@ -92,12 +95,29 @@ describe("Codex session classification", () => {
     expect(await classifySession(row(path))).toBe("auxiliary");
   });
 
+  test("configured originators classify only legacy sessions as auxiliary", async () => {
+    const legacy = join(temp, "legacy-agentvoice.jsonl");
+    const terrestrial = join(temp, "terrestrial-agentvoice.jsonl");
+    writeFileSync(legacy, rollout("legacy-agentvoice", null, "agentvoice"));
+    writeFileSync(terrestrial, rollout("terrestrial-agentvoice", "user", "agentvoice"));
+    const configured = new Set(["agentvoice"]);
+
+    expect(await classifySession(row(legacy))).toBe("full-harness");
+    expect(await classifySession(row(legacy), configured)).toBe("auxiliary");
+    expect(await classifySession(row(terrestrial), configured)).toBe("full-harness");
+  });
+
   test("accepts camelCase metadata but does not invent metadata from chatter", () => {
     expect(
       rolloutThreadSource(
         `${JSON.stringify({ type: "event_msg", payload: { message: "thread_source:user" } })}\n${JSON.stringify({ type: "session_meta", payload: { threadSource: "user" } })}`,
       ),
     ).toBe("user");
+    expect(
+      rolloutMetadata(
+        JSON.stringify({ type: "session_meta", payload: { originator: "agentvoice" } }),
+      ),
+    ).toEqual({ threadSource: null, originator: "agentvoice" });
     expect(rolloutThreadSource("not json\n")).toBeUndefined();
   });
 

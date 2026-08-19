@@ -74,6 +74,24 @@ and child-agent sessions — are auxiliary. Include them for one invocation with
 `--include-auxiliary`, or toggle them from the ctrl+k command palette. Cass
 continues to index both classes.
 
+Legacy producers that predate `thread_source` can be classified by their
+Codex `originator` in the optional XDG config at
+`~/.config/agentchats/config.json` (`$XDG_CONFIG_HOME` honored):
+
+```json
+{
+  "auxiliary": {
+    "codex-originators": ["agentvoice"]
+  }
+}
+```
+
+This fallback applies only when `thread_source` is absent. An explicit
+`thread_source: "user"` is always a full-harness session, regardless of its
+workspace, so ordinary Codex CLI work inside an auxiliary producer's project
+remains searchable. A missing config file means no legacy originators are
+classified as auxiliary; unknown keys or malformed values fail visibly.
+
 ## Layout
 
 ```

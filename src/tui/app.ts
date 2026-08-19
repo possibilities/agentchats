@@ -2,9 +2,11 @@ import { existsSync, statSync } from "node:fs";
 import {
   cachedSessionClassifier,
   cassBinary,
+  classifySession,
   loadVisibleRows,
   spawnRunner,
 } from "./cass.ts";
+import { loadAgentchatsConfig } from "./config.ts";
 import { applyDescriptions, fetchDescriptions } from "./describe.ts";
 import { assertHostedStdout, buildResumeDirective, directiveLine } from "./directive.ts";
 import {
@@ -99,11 +101,22 @@ export async function runSearch(
     );
     return 1;
   }
+  let config: Awaited<ReturnType<typeof loadAgentchatsConfig>>;
+  try {
+    config = await loadAgentchatsConfig(env);
+  } catch (error) {
+    process.stderr.write(
+      `agentchats search: ${error instanceof Error ? error.message : String(error)}\n`,
+    );
+    return 1;
+  }
 
   const workspace = invocation.workspace ?? projectDirectory();
   const state = createState(workspace, invocation.query, invocation.includeAuxiliary);
   const runner = spawnRunner(binary);
-  const classifySession = cachedSessionClassifier();
+  const classifyForSearch = cachedSessionClassifier((row) =>
+    classifySession(row, config.auxiliaryCodexOriginators),
+  );
 
   // @opentui/core is imported dynamically only — its platform-native package
   // top-level-awaits and races under parallel test isolation.
@@ -315,7 +328,7 @@ export async function runSearch(
         includeAuxiliary: state.includeAuxiliary,
         shouldContinue: () => !closed && current === generation,
       },
-      classifySession,
+      classifyForSearch,
     ).then((result) => {
       if (closed || current !== generation) return;
       if (!result.ok) {

@@ -20,9 +20,16 @@ _Avoid_: primary session (ambiguous with ranking or account selection).
 
 **Auxiliary session** — a session created below or beside a full harness by an
 app-server, realtime surface, or child-agent facility. A Codex rollout with an
-explicit non-`user` thread source is auxiliary and opt-in in the search picker.
+explicit non-`user` thread source is auxiliary and opt-in in the search picker;
+configured originators extend that classification to legacy source-less
+rollouts. Workspace never decides the class.
 _Avoid_: AgentVoice session (AgentVoice is only one producer), hidden session
 (cass still indexes it).
+
+**Agentchats config** — the optional XDG JSON file whose auxiliary policy
+names legacy Codex originators. It refines the picker without changing cass's
+index or rewriting a session store. _Avoid_: cass config, exclusion list (the
+sessions remain indexed and opt-in).
 
 **prepare** — what the installer does beyond installing the binary: build or
 refresh the index and verify the session stores are covered, so the first
