@@ -13,13 +13,25 @@ _Avoid_: cass skill, history skill.
 indexes: `~/.claude/projects` (Claude Code), `~/.codex/sessions` (Codex),
 `~/.pi/agent/sessions` (Pi). _Avoid_: logs, transcripts directory.
 
+**Full-harness session** — a top-level interactive harness session. A modern
+Codex rollout identifies it with `thread_source: "user"`; legacy rollouts with
+no thread source remain in this class. This is the default search view.
+_Avoid_: primary session (ambiguous with ranking or account selection).
+
+**Auxiliary session** — a session created below or beside a full harness by an
+app-server, realtime surface, or child-agent facility. A Codex rollout with an
+explicit non-`user` thread source is auxiliary and opt-in in the search picker.
+_Avoid_: AgentVoice session (AgentVoice is only one producer), hidden session
+(cass still indexes it).
+
 **prepare** — what the installer does beyond installing the binary: build or
 refresh the index and verify the session stores are covered, so the first
 agent search works. _Avoid_: configure, setup.
 
 **agentchats CLI** — the small surface this repository owns on top of cass:
-`bin/agentchats`, linked editable into `~/.local/bin` by the installer. One
-subcommand today, `state`. _Avoid_: cass wrapper, chats CLI.
+`bin/agentchats`, linked editable into `~/.local/bin` by the installer. `state`
+prints bearings; `search` picks a resumable session. _Avoid_: cass wrapper,
+chats CLI.
 
 **state dump** — the bearings section `agentchats state` prints for agents
 re-orienting in a project: workspace-scoped, budget-capped, markdown a model

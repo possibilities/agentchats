@@ -14,6 +14,8 @@ export interface SearchState {
   scope: Scope;
   /** How far back a search reaches; cycled with ctrl+t. */
   window: TimeWindow;
+  /** Auxiliary app-server, realtime, and child Codex threads are opt-in. */
+  includeAuxiliary: boolean;
   /** The context project directory: the "project" scope. */
   workspace: string;
   /** What the rows currently answer: recent sessions or a search. */
@@ -25,11 +27,16 @@ export interface SearchState {
   error: string | null;
 }
 
-export function createState(workspace: string, query: string): SearchState {
+export function createState(
+  workspace: string,
+  query: string,
+  includeAuxiliary = false,
+): SearchState {
   return {
     query,
     scope: "project",
     window: "all",
+    includeAuxiliary,
     workspace,
     source: "recent",
     rows: [],
@@ -61,6 +68,10 @@ export function toggleScope(state: SearchState): void {
   state.scope = state.scope === "project" ? "global" : "project";
 }
 
+export function toggleAuxiliary(state: SearchState): void {
+  state.includeAuxiliary = !state.includeAuxiliary;
+}
+
 /** The workspace argument for cass under the current scope. */
 export function scopeWorkspace(state: SearchState): string | null {
   return state.scope === "project" ? state.workspace : null;
@@ -71,7 +82,13 @@ export function scopeWorkspace(state: SearchState): string | null {
  * window when one narrows the search. */
 export function scopeLabel(state: SearchState): string {
   const place = state.scope === "project" ? basename(state.workspace) : "everywhere";
-  return state.window === "all" ? place : `${place} ${GLYPHS.sep} ${state.window}`;
+  const qualifiers = [
+    state.window === "all" ? null : state.window,
+    state.includeAuxiliary ? "auxiliary" : null,
+  ].filter((part): part is string => part !== null);
+  return qualifiers.length === 0
+    ? place
+    : `${place} ${qualifiers.map((part) => `${GLYPHS.sep} ${part}`).join(" ")}`;
 }
 
 export function cycleWindow(state: SearchState): void {

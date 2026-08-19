@@ -36,7 +36,7 @@ die() {
 usage() {
     cat <<'EOF'
 Usage: agentchats state  [--workspace <dir>] [--budget <tokens>]
-       agentchats search [query…] [--workspace <dir>]
+       agentchats search [query…] [--workspace <dir>] [--include-auxiliary]
 
 state    Print a budget-capped bearings dump of recent coding-agent sessions
          for one workspace, newest first. Made for agents re-orienting in a
@@ -49,6 +49,10 @@ search   Live-search sessions in a full-screen picker and resume the picked
 Options (state):
   --workspace <dir>   Project directory (default: the current git project)
   --budget <tokens>   Approximate output budget (default: 400, ~4 chars/token)
+
+Options (search):
+  --workspace <dir>   Project directory (default: the current git project)
+  --include-auxiliary Include app-server, realtime, and child Codex threads
 EOF
 }
 

@@ -16,11 +16,10 @@ Three pieces do that:
   index, and verifies that the Claude Code, Codex, and Pi session stores are
   covered.
 - **The `agentchats` CLI.** `bin/agentchats`, linked editable into
-  `~/.local/bin` by the installer. One subcommand today: `agentchats state`
-  prints a budget-capped bearings dump — the recent coding-agent sessions
-  for one workspace — for agents (an orchestrator, a fresh session)
-  re-orienting in a project. Markdown for a model to read; silent when the
-  workspace has none.
+  `~/.local/bin` by the installer. `agentchats state` prints a budget-capped
+  bearings dump for agents re-orienting in a project; `agentchats search` is
+  the surface-hosted resume picker. State output is Markdown for a model to
+  read and silent when the workspace has none.
 - **The `chats` skill.** `skills/chats/SKILL.md` is a comprehensive runbook
   that lets agents wield cass expertly: robot-mode discipline, the triage
   preflight, search and query language, token budgeting, cited handoff
@@ -50,6 +49,7 @@ npx --yes skills add "$HOME/code/agentchats" \
 
 ```sh
 agentchats state [--workspace <dir>] [--budget <tokens>]
+agentsurface host -- agentchats search [query…] [--workspace <dir>] [--include-auxiliary]
 ```
 
 Prints the recent sessions for one workspace (the current git project by
@@ -68,11 +68,17 @@ budget-capped, fast, offline, read-only, and silent when there is nothing to
 say (one line when cass cannot serve). Searching and reading the sessions
 themselves is cass in robot mode — the chats skill is that runbook.
 
+The search picker shows full-harness sessions by default. Modern Codex
+rollouts whose explicit `thread_source` is not `user` — app-server, realtime,
+and child-agent sessions — are auxiliary. Include them for one invocation with
+`--include-auxiliary`, or toggle them from the ctrl+k command palette. Cass
+continues to index both classes.
+
 ## Layout
 
 ```
 scripts/install.sh     cass installation contract (AgentStart calls this)
-bin/agentchats         the agentchats CLI (state), linked into ~/.local/bin
+bin/agentchats         the agentchats CLI (state + search), linked into ~/.local/bin
 skills/chats/SKILL.md  the chats skill (AgentStart's skill scan ships it)
 skills/chats/agents/   per-agent skill manifest (openai.yaml)
 ```

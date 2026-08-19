@@ -3,14 +3,14 @@ import { resolve } from "node:path";
 import { runSearch } from "./app.ts";
 
 /**
- * `agentchats search [query…] [--workspace <dir>]` — the surface-hosted
+ * `agentchats search [query…] [--workspace <dir>] [--include-auxiliary]` — the surface-hosted
  * resume picker. The bash CLI dispatches here; this file only parses the
  * few arguments and hands the terminal to the app.
  */
 
 function usage(): string {
   return [
-    "Usage: agentchats search [query…] [--workspace <dir>]",
+    "Usage: agentchats search [query…] [--workspace <dir>] [--include-auxiliary]",
     "",
     "Live-search coding-agent sessions via cass and resume the picked one on",
     "the herdr surface. Runs under a surface host, which reads one session",
@@ -18,11 +18,13 @@ function usage(): string {
     "",
     "Options:",
     "  --workspace <dir>   Project scope (default: the current git project)",
+    "  --include-auxiliary Include app-server, realtime, and child Codex threads",
   ].join("\n");
 }
 
 async function main(argv: string[]): Promise<number> {
   let workspace: string | null = null;
+  let includeAuxiliary = false;
   const words: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     const argument = argv[i]!;
@@ -40,6 +42,10 @@ async function main(argv: string[]): Promise<number> {
       i++;
       continue;
     }
+    if (argument === "--include-auxiliary") {
+      includeAuxiliary = true;
+      continue;
+    }
     if (argument.startsWith("--")) {
       console.error(`agentchats search: unknown option "${argument}"`);
       console.error(usage());
@@ -47,7 +53,11 @@ async function main(argv: string[]): Promise<number> {
     }
     words.push(argument);
   }
-  return await runSearch(process.env, { query: words.join(" "), workspace });
+  return await runSearch(process.env, {
+    query: words.join(" "),
+    workspace,
+    includeAuxiliary,
+  });
 }
 
 process.exit(await main(process.argv.slice(2)));

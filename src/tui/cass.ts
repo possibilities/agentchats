@@ -28,6 +28,23 @@ export interface CassRunner {
   (args: string[]): Promise<{ ok: true; stdout: string } | { ok: false; error: string }>;
 }
 
+export type SessionClass = "full-harness" | "auxiliary" | "unknown";
+export type SessionClassifier = (row: SessionRow) => Promise<SessionClass>;
+
+export interface VisibleRowsRequest {
+  query: string;
+  scope: string | null;
+  window: TimeWindow;
+  limit: number;
+  includeAuxiliary: boolean;
+  /** Stops a stale live-search generation before it starts another cass page. */
+  shouldContinue?: () => boolean;
+}
+
+export type VisibleRowsResult =
+  | { ok: true; rows: SessionRow[] }
+  | { ok: false; error: string };
+
 /** Same resolution as the bash CLI: PATH first, ~/.local/bin as fallback. */
 export function cassBinary(env: Record<string, string | undefined>): string | null {
   const found = Bun.which("cass", { PATH: env["PATH"] ?? "" });
@@ -69,8 +86,10 @@ export function searchArgs(
   scope: string | null,
   limit: number,
   window: TimeWindow = "all",
+  offset = 0,
 ): string[] {
   const args = ["search", query, "--json", "--limit", String(limit), "--mode", "hybrid"];
+  if (offset > 0) args.push("--offset", String(offset));
   if (window === "today") args.push("--days", "1");
   if (window === "week") args.push("--days", "7");
   if (scope !== null) args.push("--workspace", scope);
@@ -103,6 +122,15 @@ function stamp(value: unknown): string {
 
 function text(value: unknown): string {
   return typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
+}
+
+function recordCount(stdout: string, key: "hits" | "sessions"): number {
+  try {
+    const records = (JSON.parse(stdout) as Record<string, unknown>)[key];
+    return Array.isArray(records) ? records.length : 0;
+  } catch {
+    return 0;
+  }
 }
 
 /** Search hits, in cass's order (score already applied server-side),
@@ -180,4 +208,155 @@ export function parseSessions(stdout: string, scope: string | null): SessionRow[
   return [...byPath.values()]
     .sort((a, b) => (a.modified < b.modified ? 1 : -1))
     .map(({ modified: _modified, ...row }) => row);
+}
+
+const ROLLOUT_PREFIX_BYTES = 64 * 1024;
+
+/** `undefined` means no readable session metadata; `null` is a legacy
+ * session_meta with no thread source. */
+export function rolloutThreadSource(text: string): string | null | undefined {
+  for (const line of text.split("\n")) {
+    if (line.trim() === "") continue;
+    let entry: unknown;
+    try {
+      entry = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    const record = entry as Record<string, unknown>;
+    if (record["type"] !== "session_meta") continue;
+    const payload = record["payload"];
+    if (typeof payload !== "object" || payload === null) return undefined;
+    const metadata = payload as Record<string, unknown>;
+    const source = metadata["thread_source"] ?? metadata["threadSource"];
+    return typeof source === "string" && source !== "" ? source : null;
+  }
+  return undefined;
+}
+
+async function rolloutPrefix(path: string): Promise<string> {
+  const file = Bun.file(path);
+  if (path.endsWith(".zst")) {
+    const compressed = new Uint8Array(await file.arrayBuffer());
+    const decompressed = await Bun.zstdDecompress(compressed);
+    return new TextDecoder().decode(decompressed);
+  }
+  return await file.slice(0, ROLLOUT_PREFIX_BYTES).text();
+}
+
+/** Full harness Codex sessions identify themselves as `user`. Any other
+ * explicit thread source belongs to an app-server, realtime, or child-thread
+ * surface. Missing metadata fails open so old or temporarily unreadable
+ * sessions never disappear from the picker. */
+export async function classifySession(row: SessionRow): Promise<SessionClass> {
+  if (row.agent !== "codex") return "full-harness";
+  try {
+    const source = rolloutThreadSource(await rolloutPrefix(row.path));
+    if (source === undefined) return "unknown";
+    if (source === null || source === "user") return "full-harness";
+    return "auxiliary";
+  } catch {
+    return "unknown";
+  }
+}
+
+/** Cache only definitive answers. A file that was absent or incomplete on
+ * first sight gets another chance after the next cass refresh. */
+export function cachedSessionClassifier(
+  classify: SessionClassifier = classifySession,
+): SessionClassifier {
+  const cache = new Map<string, Promise<SessionClass>>();
+  return async (row) => {
+    const key = `${row.agent}\0${row.path}`;
+    const existing = cache.get(key);
+    if (existing !== undefined) return await existing;
+    const pending = classify(row).catch((): SessionClass => "unknown");
+    cache.set(key, pending);
+    const result = await pending;
+    if (result === "unknown") cache.delete(key);
+    return result;
+  };
+}
+
+async function visibleRows(
+  rows: SessionRow[],
+  includeAuxiliary: boolean,
+  classify: SessionClassifier,
+): Promise<SessionRow[]> {
+  if (includeAuxiliary) return rows;
+  const classes = await Promise.all(rows.map((row) => classify(row)));
+  return rows.filter((_row, index) => classes[index] !== "auxiliary");
+}
+
+async function loadSearchRows(
+  runner: CassRunner,
+  request: VisibleRowsRequest,
+  classify: SessionClassifier,
+): Promise<VisibleRowsResult> {
+  const rows: SessionRow[] = [];
+  const seen = new Set<string>();
+  let offset = 0;
+  while (rows.length < request.limit && (request.shouldContinue?.() ?? true)) {
+    const result = await runner(
+      searchArgs(request.query, request.scope, request.limit, request.window, offset),
+    );
+    if (!result.ok) return result;
+    if (!(request.shouldContinue?.() ?? true)) break;
+    const count = recordCount(result.stdout, "hits");
+    const unscoped = parseHits(result.stdout, null);
+    const scoped = request.scope === null ? unscoped : parseHits(result.stdout, request.scope);
+    // Cass answers an unmatched workspace with an unscoped fallback. It is
+    // not a first page whose project matches might appear later.
+    if (request.scope !== null && scoped.length === 0 && unscoped.length > 0) break;
+    const page = await visibleRows(
+      scoped.filter((row) => {
+        if (seen.has(row.path)) return false;
+        seen.add(row.path);
+        return true;
+      }),
+      request.includeAuxiliary,
+      classify,
+    );
+    rows.push(...page);
+    if (count < request.limit || count === 0) break;
+    offset += count;
+  }
+  return { ok: true, rows: rows.slice(0, request.limit) };
+}
+
+async function loadRecentRows(
+  runner: CassRunner,
+  request: VisibleRowsRequest,
+  classify: SessionClassifier,
+): Promise<VisibleRowsResult> {
+  let fetchLimit = request.limit;
+  while (request.shouldContinue?.() ?? true) {
+    const result = await runner(sessionsArgs(request.scope, fetchLimit, request.window));
+    if (!result.ok) return result;
+    if (!(request.shouldContinue?.() ?? true)) break;
+    const count = recordCount(result.stdout, "sessions");
+    const rows = await visibleRows(
+      parseSessions(result.stdout, request.scope),
+      request.includeAuxiliary,
+      classify,
+    );
+    if (rows.length >= request.limit || count < fetchLimit || count === 0) {
+      return { ok: true, rows: rows.slice(0, request.limit) };
+    }
+    fetchLimit *= 4;
+  }
+  return { ok: true, rows: [] };
+}
+
+/** The picker asks cass for ranked pages until hidden auxiliary sessions no
+ * longer consume its visible limit. Recent listings grow geometrically
+ * because cass has no offset on `sessions`; content searches page by offset. */
+export async function loadVisibleRows(
+  runner: CassRunner,
+  request: VisibleRowsRequest,
+  classify: SessionClassifier,
+): Promise<VisibleRowsResult> {
+  return request.query === ""
+    ? await loadRecentRows(runner, request, classify)
+    : await loadSearchRows(runner, request, classify);
 }

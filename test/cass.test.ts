@@ -1,5 +1,20 @@
-import { describe, expect, test } from "bun:test";
-import { parseHits, parseSessions, searchArgs, sessionsArgs } from "../src/tui/cass.ts";
+import { afterAll, describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import {
+  cachedSessionClassifier,
+  classifySession,
+  type CassRunner,
+  loadVisibleRows,
+  parseHits,
+  parseSessions,
+  rolloutThreadSource,
+  searchArgs,
+  type SessionClassifier,
+  type SessionRow,
+  sessionsArgs,
+} from "../src/tui/cass.ts";
 
 const WS = "/Users/op/code/alpha";
 
@@ -17,6 +32,8 @@ describe("searchArgs / sessionsArgs", () => {
       WS,
     ]);
     expect(searchArgs("queue", null, 30)).not.toContain("--workspace");
+    expect(searchArgs("queue", null, 30, "all", 60)).toContain("--offset");
+    expect(searchArgs("queue", null, 30, "all", 60)).toContain("60");
     expect(sessionsArgs(WS, 20)).toContain("--workspace");
     expect(sessionsArgs(null, 20)).not.toContain("--workspace");
   });
@@ -28,6 +45,187 @@ describe("searchArgs / sessionsArgs", () => {
     expect(sessionsArgs(null, 20, "today").join(" ")).toContain("--since 1d");
     expect(sessionsArgs(null, 20, "week").join(" ")).toContain("--since 7d");
     expect(sessionsArgs(null, 20, "all").join(" ")).not.toContain("--since");
+  });
+});
+
+function row(path: string, agent = "codex"): SessionRow {
+  return {
+    agent,
+    workspace: WS,
+    path,
+    title: path,
+    when: "",
+    snippet: null,
+    line: null,
+    slug: null,
+    excerpt: null,
+  };
+}
+
+const temp = mkdtempSync(join(tmpdir(), "agentchats-classify-"));
+afterAll(() => rmSync(temp, { recursive: true, force: true }));
+
+function rollout(path: string, threadSource: string | null): string {
+  const payload = threadSource === null ? { id: path } : { id: path, thread_source: threadSource };
+  return `${JSON.stringify({ type: "session_meta", payload })}\n${JSON.stringify({ type: "response_item", payload: { role: "user" } })}\n`;
+}
+
+describe("Codex session classification", () => {
+  test("reads full-harness, auxiliary, and legacy metadata", async () => {
+    const user = join(temp, "user.jsonl");
+    const worker = join(temp, "worker.jsonl");
+    const legacy = join(temp, "legacy.jsonl");
+    writeFileSync(user, rollout("user", "user"));
+    writeFileSync(worker, rollout("worker", "agentvoice-worker"));
+    writeFileSync(legacy, rollout("legacy", null));
+
+    expect(await classifySession(row(user))).toBe("full-harness");
+    expect(await classifySession(row(worker))).toBe("auxiliary");
+    expect(await classifySession(row(legacy))).toBe("full-harness");
+    expect(await classifySession(row("/missing", "claude_code"))).toBe("full-harness");
+    expect(await classifySession(row("/missing"))).toBe("unknown");
+  });
+
+  test("reads compressed rollouts with Bun's Zstandard support", async () => {
+    const path = join(temp, "worker.jsonl.zst");
+    writeFileSync(path, Bun.zstdCompressSync(new TextEncoder().encode(rollout("z", "subagent"))));
+    expect(await classifySession(row(path))).toBe("auxiliary");
+  });
+
+  test("accepts camelCase metadata but does not invent metadata from chatter", () => {
+    expect(
+      rolloutThreadSource(
+        `${JSON.stringify({ type: "event_msg", payload: { message: "thread_source:user" } })}\n${JSON.stringify({ type: "session_meta", payload: { threadSource: "user" } })}`,
+      ),
+    ).toBe("user");
+    expect(rolloutThreadSource("not json\n")).toBeUndefined();
+  });
+
+  test("does not cache an unknown answer", async () => {
+    let calls = 0;
+    const cached = cachedSessionClassifier(async () => {
+      calls++;
+      return calls === 1 ? "unknown" : "full-harness";
+    });
+    expect(await cached(row("/appearing.jsonl"))).toBe("unknown");
+    expect(await cached(row("/appearing.jsonl"))).toBe("full-harness");
+    expect(calls).toBe(2);
+  });
+});
+
+function searchPage(paths: string[]): string {
+  return JSON.stringify({
+    hits: paths.map((path) => ({
+      agent: "codex",
+      workspace: WS,
+      source_path: path,
+      title: path,
+    })),
+  });
+}
+
+function recentPage(paths: string[]): string {
+  return JSON.stringify({
+    sessions: paths.map((path, index) => ({
+      agent: "codex",
+      workspace: WS,
+      path,
+      title: path,
+      modified: `2026-08-${String(19 - index).padStart(2, "0")}T00:00:00Z`,
+    })),
+  });
+}
+
+const byName: SessionClassifier = async (session) =>
+  session.path.includes("aux") ? "auxiliary" : "full-harness";
+
+describe("loadVisibleRows", () => {
+  test("pages search until auxiliary hits no longer consume the visible limit", async () => {
+    const calls: string[][] = [];
+    const runner: CassRunner = async (args) => {
+      calls.push(args);
+      return {
+        ok: true,
+        stdout: args.includes("--offset")
+          ? searchPage(["/full-a", "/full-b"])
+          : searchPage(["/aux-a", "/aux-b"]),
+      };
+    };
+    const result = await loadVisibleRows(
+      runner,
+      { query: "queue", scope: WS, window: "all", limit: 2, includeAuxiliary: false },
+      byName,
+    );
+    expect(result).toEqual({ ok: true, rows: [row("/full-a"), row("/full-b")] });
+    expect(calls).toHaveLength(2);
+    expect(calls[1]).toContain("--offset");
+    expect(calls[1]).toContain("2");
+  });
+
+  test("grows recent-session requests until enough full harnesses are visible", async () => {
+    const limits: string[] = [];
+    const runner: CassRunner = async (args) => {
+      const limit = args[args.indexOf("--limit") + 1] ?? "";
+      limits.push(limit);
+      return {
+        ok: true,
+        stdout:
+          limit === "2"
+            ? recentPage(["/aux-a", "/aux-b"])
+            : recentPage(["/aux-a", "/aux-b", "/full-a", "/full-b"]),
+      };
+    };
+    const result = await loadVisibleRows(
+      runner,
+      { query: "", scope: WS, window: "all", limit: 2, includeAuxiliary: false },
+      byName,
+    );
+    expect(result.ok && result.rows.map((session) => session.path)).toEqual([
+      "/full-a",
+      "/full-b",
+    ]);
+    expect(limits).toEqual(["2", "8"]);
+  });
+
+  test("the opt-in returns auxiliary rows without another page", async () => {
+    let calls = 0;
+    const runner: CassRunner = async () => {
+      calls++;
+      return { ok: true, stdout: searchPage(["/aux-a", "/aux-b"]) };
+    };
+    const result = await loadVisibleRows(
+      runner,
+      { query: "queue", scope: WS, window: "all", limit: 2, includeAuxiliary: true },
+      byName,
+    );
+    expect(result.ok && result.rows.map((session) => session.path)).toEqual([
+      "/aux-a",
+      "/aux-b",
+    ]);
+    expect(calls).toBe(1);
+  });
+
+  test("an unmatched workspace fallback does not page through global results", async () => {
+    let calls = 0;
+    const runner: CassRunner = async () => {
+      calls++;
+      return {
+        ok: true,
+        stdout: JSON.stringify({
+          hits: [
+            { agent: "codex", workspace: "/somewhere/else", source_path: "/full-a" },
+            { agent: "codex", workspace: "/somewhere/else", source_path: "/full-b" },
+          ],
+        }),
+      };
+    };
+    const result = await loadVisibleRows(
+      runner,
+      { query: "queue", scope: WS, window: "all", limit: 2, includeAuxiliary: false },
+      byName,
+    );
+    expect(result).toEqual({ ok: true, rows: [] });
+    expect(calls).toBe(1);
   });
 });
 

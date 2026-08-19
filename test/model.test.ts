@@ -10,6 +10,7 @@ import {
   scopeLabel,
   scopeWorkspace,
   type SearchState,
+  toggleAuxiliary,
   toggleScope,
 } from "../src/tui/model.ts";
 
@@ -63,6 +64,17 @@ describe("selection discipline", () => {
     expect(scopeLabel(state)).toBe("everywhere");
     toggleScope(state);
     expect(scopeWorkspace(state)).toBe("/Users/op/code/alpha");
+  });
+
+  test("auxiliary sessions are opt-in and visible in the scope label", () => {
+    const state = stateWith([]);
+    expect(state.includeAuxiliary).toBe(false);
+    expect(scopeLabel(state)).toBe("alpha");
+    toggleAuxiliary(state);
+    expect(state.includeAuxiliary).toBe(true);
+    expect(scopeLabel(state)).toBe("alpha · auxiliary");
+    cycleWindow(state);
+    expect(scopeLabel(state)).toBe("alpha · today · auxiliary");
   });
 });
 

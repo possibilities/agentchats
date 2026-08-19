@@ -1,10 +1,8 @@
 import { existsSync, statSync } from "node:fs";
 import {
+  cachedSessionClassifier,
   cassBinary,
-  parseHits,
-  parseSessions,
-  searchArgs,
-  sessionsArgs,
+  loadVisibleRows,
   spawnRunner,
 } from "./cass.ts";
 import { applyDescriptions, fetchDescriptions } from "./describe.ts";
@@ -18,6 +16,7 @@ import {
   moveSelection,
   scopeLabel,
   scopeWorkspace,
+  toggleAuxiliary,
   toggleScope,
 } from "./model.ts";
 import { createListOverlay } from "./overlay.ts";
@@ -73,6 +72,7 @@ export function queryKeyBindings(defaults: readonly QueryBinding[]): QueryBindin
 export interface SearchInvocation {
   query: string;
   workspace: string | null;
+  includeAuxiliary: boolean;
 }
 
 export async function runSearch(
@@ -101,8 +101,9 @@ export async function runSearch(
   }
 
   const workspace = invocation.workspace ?? projectDirectory();
-  const state = createState(workspace, invocation.query);
+  const state = createState(workspace, invocation.query, invocation.includeAuxiliary);
   const runner = spawnRunner(binary);
+  const classifySession = cachedSessionClassifier();
 
   // @opentui/core is imported dynamically only — its platform-native package
   // top-level-awaits and races under parallel test isolation.
@@ -304,22 +305,23 @@ export async function runSearch(
     paint();
     const scope = scopeWorkspace(state);
     const source = trimmed === "" ? "recent" : "search";
-    const args =
-      trimmed === ""
-        ? sessionsArgs(scope, RECENT_LIMIT, state.window)
-        : searchArgs(trimmed, scope, SEARCH_LIMIT, state.window);
-    void runner(args).then((result) => {
+    void loadVisibleRows(
+      runner,
+      {
+        query: trimmed,
+        scope,
+        window: state.window,
+        limit: trimmed === "" ? RECENT_LIMIT : SEARCH_LIMIT,
+        includeAuxiliary: state.includeAuxiliary,
+        shouldContinue: () => !closed && current === generation,
+      },
+      classifySession,
+    ).then((result) => {
       if (closed || current !== generation) return;
       if (!result.ok) {
         applyError(state, result.error);
       } else {
-        applyRows(
-          state,
-          source,
-          source === "recent"
-            ? parseSessions(result.stdout, scope)
-            : parseHits(result.stdout, scope),
-        );
+        applyRows(state, source, result.rows);
         // Enrichment arrives late and only improves rows already shown, so
         // it rides behind the paint and honors the same generation.
         void fetchDescriptions(state.rows, env).then((descriptions) => {
@@ -398,6 +400,12 @@ export async function runSearch(
     refresh();
   };
 
+  const toggleAuxiliaryAndSearch = (): void => {
+    toggleAuxiliary(state);
+    if (!closed) query.focus();
+    refresh();
+  };
+
   const commandItems = () => [
     { id: "resume", key: "⏎", label: "resume the selected session", onRun: () => commit() },
     {
@@ -413,6 +421,12 @@ export async function runSearch(
       label: "cycle the time window",
       meta: state.window,
       onRun: () => cycleWindowAndSearch(),
+    },
+    {
+      id: "auxiliary",
+      label: state.includeAuxiliary ? "hide auxiliary threads" : "include auxiliary threads",
+      meta: state.includeAuxiliary ? "shown" : "hidden",
+      onRun: () => toggleAuxiliaryAndSearch(),
     },
     { id: "quit", key: "ESC", label: "quit without resuming", onRun: () => shutdown(0) },
   ];
