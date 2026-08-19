@@ -36,32 +36,15 @@ die() {
 usage() {
     cat <<'EOF'
 Usage: agentchats state [--workspace <dir>] [--budget <tokens>]
-       agentchats view  [<session.jsonl>] [--workspace <dir>] [--current]
 
-state — print a budget-capped bearings dump of recent coding-agent sessions
-for one workspace, newest first. Made for agents re-orienting in a project;
-searching and reading the sessions themselves is cass (see the chats skill).
+Print a budget-capped bearings dump of recent coding-agent sessions for one
+workspace, newest first. Made for agents re-orienting in a project; searching
+and reading the sessions themselves is cass (see the chats skill).
 
+Options:
   --workspace <dir>   Project directory (default: the current git project)
   --budget <tokens>   Approximate output budget (default: 400, ~4 chars/token)
-
-view — open a session transcript (Claude Code, Codex, or Pi) in the live
-read-only viewer. With no arguments the newest session for the current git
-project opens, already following the tail. Actions live in the ctrl+k palette.
 EOF
-}
-
-view() {
-    local script repo
-    script=$(readlink -f "$0" 2>/dev/null) || script=$0
-    repo=$(cd "$(dirname "$script")/.." && pwd)
-    command -v bun >/dev/null 2>&1 \
-        || die "the viewer needs bun; install it (brew install oven-sh/bun/bun) and rerun"
-    [ -d "$repo/viewer/node_modules" ] \
-        || die "viewer dependencies missing; run: $repo/scripts/install.sh --install"
-    export AGENTCHATS_CALLER_PWD=$PWD
-    cd "$repo/viewer" || die "viewer directory missing at $repo/viewer"
-    exec bun src/main.tsx "$@"
 }
 
 state() {
@@ -145,10 +128,6 @@ case "${1:-}" in
     state)
         shift
         state "$@"
-        ;;
-    view)
-        shift
-        view "$@"
         ;;
     -h|--help|'')
         usage

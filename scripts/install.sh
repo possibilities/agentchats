@@ -89,7 +89,6 @@ case "${1:-}" in
 cass (coding agent session search):
   curl -fsSL $installer_url | bash -s -- --verify [--version <gh-resolved tag>]
   ln -sfn $repo_root/bin/agentchats $dest_dir/agentchats   # the agentchats CLI, linked editable
-  (cd $repo_root/viewer && bun install)   # transcript viewer deps; skipped without bun
   cass index          # incremental when serving; cass index --full otherwise
                       # yields to any rebuild another process has in flight
   cass search "" --robot --limit 1   # the gate: search must serve after indexing
@@ -136,17 +135,6 @@ fi
 # contract the other agent* checkouts use for their own CLIs.
 printf 'Linking the agentchats CLI.\n'
 ln -sfn "$repo_root/bin/agentchats" "$dest_dir/agentchats"
-
-# The transcript viewer (agentchats view) is a bun package inside this
-# checkout. A machine without bun skips it — state and search still serve —
-# and a machine with bun must end up with runnable viewer deps.
-if command -v bun >/dev/null 2>&1; then
-    printf 'Preparing the transcript viewer (bun install).\n'
-    (cd "$repo_root/viewer" && bun install --silent) \
-        || die "viewer dependencies failed to install; run: cd $repo_root/viewer && bun install"
-else
-    printf 'bun is not installed; skipping the transcript viewer (agentchats view).\n' >&2
-fi
 
 # Prepare the index. A serving install refreshes incrementally; a first
 # install or a broken one rebuilds fully. An incremental refresh that fails
