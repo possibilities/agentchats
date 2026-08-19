@@ -76,6 +76,11 @@ export function queryKeyBindings(defaults: readonly QueryBinding[]): QueryBindin
   ];
 }
 
+/** The search field shares the same left-weighted focus rail as selectable rows. */
+export function queryRailGlyph(searching: boolean): string {
+  return searching ? GLYPHS.busy : GLYPHS.rail;
+}
+
 export interface SearchInvocation {
   query: string;
   workspace: string | null;
@@ -183,7 +188,7 @@ export async function runSearch(
       listScroll(direction);
     },
   });
-  // The query block: the accent input rail beside OpenTUI's own textarea —
+  // The query block: the accent focus rail beside OpenTUI's own textarea —
   // a real line editor. The rail doubles as the live-search signal: the
   // busy glyph while a cass run is in flight.
   const queryRow = new core.BoxRenderable(renderer, {
@@ -205,7 +210,7 @@ export async function runSearch(
   });
   const rail = new core.TextRenderable(renderer, {
     id: "search-query-rail",
-    content: GLYPHS.inputRail,
+    content: queryRailGlyph(false),
     fg: SIGNAL_ROOM.accent,
     width: 2,
   });
@@ -556,7 +561,7 @@ export async function runSearch(
         : searchFocus === "query"
           ? SIGNAL_ROOM.accent
           : SIGNAL_ROOM.faint;
-    rail.content = state.searching ? GLYPHS.busy : GLYPHS.inputRail;
+    rail.content = queryRailGlyph(state.searching);
     // Frame padding is 2+2; the query rail is 2 more.
     query.width = Math.max(8, columns - 6);
     const projectRaw =

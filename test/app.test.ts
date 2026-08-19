@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { queryKeyBindings } from "../src/tui/app.ts";
+import { queryKeyBindings, queryRailGlyph } from "../src/tui/app.ts";
+import { GLYPHS } from "../src/tui/theme.ts";
 
 type Binding = Parameters<typeof queryKeyBindings>[0][number];
 
@@ -39,5 +40,15 @@ describe("queryKeyBindings", () => {
   test("the rest of the line-editing set survives", () => {
     const bindings = queryKeyBindings(DEFAULTS);
     expect(bindings.some((b) => b.name === "a" && b.ctrl === true)).toBe(true);
+  });
+});
+
+describe("queryRailGlyph", () => {
+  test("uses the same left-weighted rail as selected rows while idle", () => {
+    expect(queryRailGlyph(false)).toBe(GLYPHS.rail);
+  });
+
+  test("keeps the live-search signal while cass is running", () => {
+    expect(queryRailGlyph(true)).toBe(GLYPHS.busy);
   });
 });
