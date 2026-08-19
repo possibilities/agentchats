@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import * as core from "@opentui/core";
 import { createTestRenderer } from "@opentui/core/testing";
-import { createListOverlay } from "../src/tui/overlay.ts";
+import { createListOverlay, overlayMatches } from "../src/tui/overlay.ts";
 
 const TOKENS = {
   panel: "#131a1e",
@@ -35,5 +35,18 @@ describe("list overlay", () => {
     expect(frame).toContain("choose project");
     expect(frame).not.toContain("[]");
     setup.renderer.destroy();
+  });
+});
+
+describe("overlayMatches", () => {
+  const items = [
+    { id: "voice", label: "~/code/agentvoice", onRun: () => {} },
+    { id: "chats", label: "~/code/agentchats", onRun: () => {} },
+    { id: "surface", label: "~/code/agentsurface", onRun: () => {} },
+  ];
+
+  test("prefers exact substrings and admits compact fuzzy subsequences", () => {
+    expect(overlayMatches(items, "chat").map((item) => item.id)).toEqual(["chats"]);
+    expect(overlayMatches(items, "agtvc").map((item) => item.id)).toEqual(["voice"]);
   });
 });

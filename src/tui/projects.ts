@@ -1,58 +1,76 @@
-import { sessionsArgs, type CassRunner } from "./cass.ts";
+import { type Dirent, readdirSync, statSync } from "node:fs";
+import { join } from "node:path";
 
-/** One indexed project offered by the search scope picker. */
+/** One local project offered by the search scope picker. */
 export interface ProjectChoice {
   path: string;
   display: string;
 }
 
-export type ProjectChoicesResult =
-  | { ok: true; projects: ProjectChoice[] }
-  | { ok: false; error: string };
+export const DEFAULT_PROJECT_ROOTS = ["~/code", "~/src"] as const;
 
 export function projectDisplayPath(path: string, home: string): string {
   if (path === home) return "~";
   return home !== "" && path.startsWith(`${home}/`) ? `~${path.slice(home.length)}` : path;
 }
 
-/**
- * Cass returns sessions newest first. Keep the first occurrence of each
- * workspace so the project list follows recent activity, while always
- * leading with the project the picker opened on.
- */
-export function parseProjectChoices(
-  stdout: string,
-  currentProject: string,
-  home: string,
-): ProjectChoice[] {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(stdout);
-  } catch {
-    parsed = {};
-  }
-  const sessions = (parsed as { sessions?: unknown }).sessions;
-  const paths = [currentProject];
-  const seen = new Set(paths);
-  if (Array.isArray(sessions)) {
-    for (const session of sessions) {
-      const workspace = (session as Record<string, unknown>)["workspace"];
-      if (typeof workspace !== "string" || workspace === "" || seen.has(workspace)) continue;
-      seen.add(workspace);
-      paths.push(workspace);
-    }
-  }
-  return paths.map((path) => ({ path, display: projectDisplayPath(path, home) }));
+function expandTilde(path: string, home: string): string {
+  if (path === "~") return home;
+  return path.startsWith("~/") ? join(home, path.slice(2)) : path;
 }
 
-/** `sessions --limit 0` is cass's complete recent-session listing. */
-export async function loadProjectChoices(
-  runner: CassRunner,
+/**
+ * The AgentLaunch project rule: offer each configured root and its immediate
+ * directories, including directory symlinks. Missing roots are harmless.
+ * This is a bounded filesystem scan, independent of transcript volume.
+ */
+export function scanProjectPaths(roots: readonly string[], home: string): string[] {
+  const paths: string[] = [];
+  const seen = new Set<string>();
+  for (const root of roots) {
+    const base = expandTilde(root, home);
+    let entries: Dirent[];
+    try {
+      entries = readdirSync(base, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    if (!seen.has(base)) {
+      seen.add(base);
+      paths.push(base);
+    }
+    entries.sort((a, b) => (a.name < b.name ? -1 : 1));
+    for (const entry of entries) {
+      if (entry.name.startsWith(".")) continue;
+      const path = join(base, entry.name);
+      let isDirectory = entry.isDirectory();
+      if (!isDirectory && entry.isSymbolicLink()) {
+        try {
+          isDirectory = statSync(path).isDirectory();
+        } catch {
+          isDirectory = false;
+        }
+      }
+      if (!isDirectory || seen.has(path)) continue;
+      seen.add(path);
+      paths.push(path);
+    }
+  }
+  return paths;
+}
+
+/** The opening project leads; the scanned roots and children follow. */
+export function discoverProjectChoices(
   currentProject: string,
   home: string,
-): Promise<ProjectChoicesResult> {
-  const result = await runner(sessionsArgs(null, 0));
-  return result.ok
-    ? { ok: true, projects: parseProjectChoices(result.stdout, currentProject, home) }
-    : result;
+  roots: readonly string[] = DEFAULT_PROJECT_ROOTS,
+): ProjectChoice[] {
+  const paths = [currentProject];
+  const seen = new Set(paths);
+  for (const path of scanProjectPaths(roots, home)) {
+    if (seen.has(path)) continue;
+    seen.add(path);
+    paths.push(path);
+  }
+  return paths.map((path) => ({ path, display: projectDisplayPath(path, home) }));
 }

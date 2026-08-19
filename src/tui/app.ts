@@ -16,15 +16,15 @@ import {
   createState,
   cycleWindow,
   moveSelection,
-  scopeLabel,
   scopeWorkspace,
+  selectAllProjects,
   selectProject,
   toggleAuxiliary,
   toggleScope,
 } from "./model.ts";
 import { createListOverlay, type OverlayItem } from "./overlay.ts";
 import {
-  loadProjectChoices,
+  discoverProjectChoices,
   type ProjectChoice,
   projectDisplayPath,
 } from "./projects.ts";
@@ -55,11 +55,8 @@ interface QueryBinding {
 }
 
 /** The query field's keymap: the widget's default line-editing set with
- * enter submitting the pick instead of inserting, and two chords released
- * to the app — ctrl+k for the command palette (the fleet chord outranks
- * kill-to-line-end in a field this short), ctrl+g for the scope toggle,
- * and ctrl+t for the time window: the toggles must work while typing
- * because printable keys are the field's. */
+ * enter submitting the pick instead of inserting. Ctrl+k/g/t and Tab are
+ * released to the app for palette, scope, time, and field focus. */
 export function queryKeyBindings(defaults: readonly QueryBinding[]): QueryBinding[] {
   return [
     ...defaults.filter(
@@ -69,7 +66,9 @@ export function queryKeyBindings(defaults: readonly QueryBinding[]): QueryBindin
             binding.shift !== true &&
             binding.action === "newline") ||
           ((binding.name === "k" || binding.name === "g" || binding.name === "t") &&
-            binding.ctrl === true)
+            binding.ctrl === true) ||
+          binding.name === "tab" ||
+          binding.name === "backtab"
         ),
     ),
     { name: "return", action: "submit" },
@@ -119,6 +118,7 @@ export async function runSearch(
 
   const workspace = invocation.workspace ?? projectDirectory();
   const home = env["HOME"] ?? "";
+  const projectChoices = discoverProjectChoices(workspace, home);
   const state = createState(workspace, invocation.query, invocation.includeAuxiliary);
   const runner = spawnRunner(binary);
   const classifyForSearch = cachedSessionClassifier((row) =>
@@ -197,7 +197,10 @@ export async function runSearch(
       if (commands.isOpen() || projects.isOpen()) {
         dismissOverlays();
         paint();
+        return;
       }
+      focusQuery();
+      paint();
     },
   });
   const rail = new core.TextRenderable(renderer, {
@@ -221,19 +224,36 @@ export async function runSearch(
     placeholderColor: SIGNAL_ROOM.muted,
     keyBindings: queryKeyBindings(core.defaultTextareaKeyBindings),
   });
-  // The scope readout, right of the query: the project's name when scoped,
-  // "everywhere" when global — the indicator for what a search covers.
-  const scopeTag = new core.TextRenderable(renderer, {
-    id: "search-scope",
-    content: "",
-    height: 1,
-    flexShrink: 0,
-    fg: SIGNAL_ROOM.muted,
-  });
   queryRow.add(rail);
   queryRow.add(query);
-  queryRow.add(scopeTag);
   frame.add(queryRow);
+  // Project is a first-class field beneath search, following AgentLaunch's
+  // form grammar: Tab focuses it; Space/Enter opens its fuzzy chooser.
+  const projectRow = new core.BoxRenderable(renderer, {
+    id: "search-project-row",
+    width: "100%",
+    height: 1,
+    flexShrink: 0,
+    flexDirection: "row",
+    backgroundColor: SIGNAL_ROOM.canvas,
+    onMouseUp: (event) => {
+      event.stopPropagation();
+      if (commands.isOpen() || projects.isOpen()) {
+        dismissOverlays();
+        paint();
+        return;
+      }
+      focusProject();
+      openProjects();
+    },
+  });
+  const projectText = new core.TextRenderable(renderer, {
+    id: "search-project",
+    content: "",
+    height: 1,
+  });
+  projectRow.add(projectText);
+  frame.add(projectRow);
   // The result list is a column of per-row renderables rather than one text
   // blob, so every row is a pointer target the renderer can hit-test.
   const body = new core.BoxRenderable(renderer, {
@@ -267,10 +287,23 @@ export async function runSearch(
   renderer.root.add(commands.root);
   renderer.root.add(projects.root);
 
-  // The palette is modal to the keyboard, and the renderer routes keys to
-  // the focused textarea regardless — so opening the palette blurs the
-  // query (else enter reaches the field's submit and commits a pick through
-  // a closed palette), and every close path hands focus back.
+  type SearchFocus = "query" | "project";
+  let searchFocus: SearchFocus = "query";
+  const focusQuery = (): void => {
+    searchFocus = "query";
+    query.focus();
+  };
+  const focusProject = (): void => {
+    searchFocus = "project";
+    query.blur();
+  };
+  const restoreFocus = (): void => {
+    if (searchFocus === "query") query.focus();
+    else query.blur();
+  };
+
+  // Overlays are modal to the keyboard. The focused field is remembered
+  // underneath them and restored on every close path.
   const openPalette = (): void => {
     query.blur();
     commands.open();
@@ -278,7 +311,7 @@ export async function runSearch(
   const dismissOverlays = (): void => {
     commands.close();
     projects.close();
-    if (!closed) query.focus();
+    if (!closed) restoreFocus();
   };
 
   const lineToStyled = (line: Line): InstanceType<typeof core.StyledText> => {
@@ -415,75 +448,69 @@ export async function runSearch(
 
   const toggleScopeAndSearch = (): void => {
     toggleScope(state);
-    // A palette pick lands here after the overlay closed itself; typing
-    // must keep working, so the query takes focus back.
-    if (!closed) query.focus();
     refresh();
   };
 
   const cycleWindowAndSearch = (): void => {
     cycleWindow(state);
-    if (!closed) query.focus();
     refresh();
   };
 
   const toggleAuxiliaryAndSearch = (): void => {
     toggleAuxiliary(state);
-    if (!closed) query.focus();
     refresh();
   };
 
-  let projectChoices: ProjectChoice[] = [
-    { path: workspace, display: projectDisplayPath(workspace, home) },
-  ];
-  let projectsLoading = false;
-  let projectsLoaded = false;
-  let projectsError: string | null = null;
-
   const projectItems = (): OverlayItem[] => {
-    if (projectsLoading && !projectsLoaded) {
-      return [{ id: "loading", label: `loading projects${GLYPHS.ellipsis}`, onRun: () => {} }];
-    }
-    if (projectsError !== null) {
-      return [{ id: "error", label: `FAILED ${GLYPHS.sep} ${projectsError}`, onRun: () => {} }];
-    }
-    return projectChoices.map((project) => ({
-      id: project.path,
-      label: project.display,
-      onRun: () => {
-        selectProject(state, project.path);
-        refresh();
+    return [
+      {
+        id: "all-projects",
+        label: "all projects",
+        meta: "everywhere",
+        onRun: () => {
+          selectAllProjects(state);
+          refresh();
+        },
       },
-    }));
-  };
-
-  const loadProjects = (): void => {
-    if (projectsLoading || projectsLoaded) return;
-    projectsLoading = true;
-    paint();
-    void loadProjectChoices(runner, workspace, home).then((result) => {
-      if (closed) return;
-      projectsLoading = false;
-      if (result.ok) {
-        projectChoices = result.projects;
-        projectsLoaded = true;
-        projectsError = null;
-      } else {
-        projectsError = result.error;
-      }
-      paint();
-    });
+      ...projectChoices.map((project) => ({
+        id: project.path,
+        label: project.display,
+        onRun: () => {
+          selectProject(state, project.path);
+          refresh();
+        },
+      })),
+    ];
   };
 
   const openProjects = (): void => {
-    query.blur();
-    const at = Math.max(
-      0,
-      projectChoices.findIndex((project) => project.path === state.workspace),
-    );
+    focusProject();
+    const at =
+      state.scope === "global"
+        ? 0
+        : Math.max(
+            1,
+            projectChoices.findIndex((project) => project.path === state.workspace) + 1,
+          );
     projects.open(at);
-    loadProjects();
     paint();
+  };
+
+  const stepProject = (delta: number): void => {
+    const choices: Array<ProjectChoice | null> = [null, ...projectChoices];
+    const current =
+      state.scope === "global"
+        ? 0
+        : Math.max(
+            1,
+            projectChoices.findIndex((project) => project.path === state.workspace) + 1,
+          );
+    const at = Math.max(0, Math.min(choices.length - 1, current + delta));
+    const choice = choices[at];
+    if (choice === undefined) return;
+    if (choice === null) selectAllProjects(state);
+    else selectProject(state, choice.path);
+    refresh();
   };
 
   const commandItems = () => [
@@ -523,13 +550,51 @@ export async function runSearch(
   const paint = (): void => {
     const columns = process.stderr.columns || renderer.width || 80;
     const rows = renderer.height || process.stderr.rows || 24;
-    rail.fg = state.searching ? SIGNAL_ROOM.local : SIGNAL_ROOM.accent;
+    rail.fg =
+      state.searching
+        ? SIGNAL_ROOM.local
+        : searchFocus === "query"
+          ? SIGNAL_ROOM.accent
+          : SIGNAL_ROOM.faint;
     rail.content = state.searching ? GLYPHS.busy : GLYPHS.inputRail;
-    const scope = scopeLabel(state);
-    scopeTag.content = `  ${scope}`;
-    // Frame padding is 2+2; the rail is 2 more; the scope tag takes its own.
-    query.width = Math.max(8, columns - 6 - (scope.length + 2));
-    const visible = Math.max(3, rows - 6);
+    // Frame padding is 2+2; the query rail is 2 more.
+    query.width = Math.max(8, columns - 6);
+    const projectRaw =
+      state.scope === "global" ? "all projects" : projectDisplayPath(state.workspace, home);
+    const qualifiers = [
+      state.window === "all" ? null : state.window,
+      state.includeAuxiliary ? "auxiliary" : null,
+    ].filter((part): part is string => part !== null);
+    const qualifierWidth = qualifiers.reduce(
+      (total, qualifier) => total + 4 + qualifier.length,
+      0,
+    );
+    const project = fitText(
+      projectRaw,
+      Math.max(
+        6,
+        columns - 4 - 13 - qualifierWidth - (searchFocus === "project" ? 4 : 0),
+      ),
+    );
+    const projectSpans: Line = [
+      searchFocus === "project"
+        ? { text: `${GLYPHS.rail} `, token: "accent", bold: true }
+        : { text: "  ", token: "canvas" },
+      { text: "project    ", token: "muted" },
+      ...(searchFocus === "project"
+        ? [
+            { text: `${GLYPHS.prev} `, token: "faint" as const },
+            { text: project, token: "text" as const, bold: true },
+            { text: ` ${GLYPHS.next}`, token: "faint" as const },
+          ]
+        : [{ text: project, token: "text" as const }]),
+      ...qualifiers.flatMap((qualifier) => [
+        { text: `  ${GLYPHS.sep} `, token: "faint" as const },
+        { text: qualifier, token: "muted" as const },
+      ]),
+    ];
+    projectText.content = lineToStyled(projectSpans);
+    const visible = Math.max(3, rows - 7);
     const resultRows = buildResultRows(state, Math.max(24, columns - 4), visible);
     const nextSignature = JSON.stringify(resultRows);
     if (nextSignature !== bodySignature) {
@@ -584,7 +649,7 @@ export async function runSearch(
     querySubmitted = true;
     commit();
   };
-  query.focus();
+  focusQuery();
   if (invocation.query !== "") {
     query.setText(invocation.query);
     query.cursorOffset = query.plainText.length;
@@ -624,8 +689,8 @@ export async function runSearch(
       }
       openOverlay.handleKey(key);
       // The overlay may have closed itself (escape, or enter running an
-      // item); focus follows it back to the query either way.
-      if (!commands.isOpen() && !projects.isOpen() && !closed) query.focus();
+      // item); focus returns to the field that opened it.
+      if (!commands.isOpen() && !projects.isOpen() && !closed) restoreFocus();
       return;
     }
     if (key.ctrl && key.name === "k") {
@@ -640,8 +705,34 @@ export async function runSearch(
       cycleWindowAndSearch();
       return;
     }
+    if (key.name === "tab" || key.name === "backtab") {
+      if (searchFocus === "query") focusProject();
+      else focusQuery();
+      paint();
+      return;
+    }
     if (key.name === "escape") {
       shutdown(0);
+      return;
+    }
+    if (searchFocus === "project") {
+      if (
+        key.name === "space" ||
+        key.sequence === " " ||
+        key.name === "return" ||
+        key.name === "enter"
+      ) {
+        openProjects();
+        return;
+      }
+      if (key.name === "left" || key.name === "up") {
+        stepProject(-1);
+        return;
+      }
+      if (key.name === "right" || key.name === "down") {
+        stepProject(1);
+        return;
+      }
       return;
     }
     if (key.name === "up" || (key.ctrl === true && key.name === "p")) {
@@ -666,6 +757,12 @@ export async function runSearch(
 function basename(path: string): string {
   const parts = path.split("/").filter((part) => part !== "");
   return parts[parts.length - 1] ?? path;
+}
+
+function fitText(text: string, width: number): string {
+  if (text.length <= width) return text;
+  if (width <= 1) return GLYPHS.ellipsis;
+  return `${text.slice(0, width - 1)}${GLYPHS.ellipsis}`;
 }
 
 /** The context project: the git toplevel of the host-provided cwd, or the

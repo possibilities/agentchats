@@ -49,13 +49,40 @@ export interface ListOverlay {
   update(state: OverlayState): void;
 }
 
-/** Case-insensitive substring filter over "label key meta". Pure for tests. */
+function fuzzyScore(haystack: string, needle: string): number | null {
+  const exact = haystack.indexOf(needle);
+  if (exact >= 0) return exact;
+  let from = 0;
+  let previous = -1;
+  let gaps = 0;
+  for (const character of needle) {
+    const at = haystack.indexOf(character, from);
+    if (at < 0) return null;
+    if (previous >= 0) gaps += at - previous - 1;
+    previous = at;
+    from = at + 1;
+  }
+  return 10_000 + gaps;
+}
+
+/** Case-insensitive fuzzy filter over "label key meta". Exact substrings
+ * lead; subsequence matches follow by compactness, with source order as the
+ * stable tiebreaker. Pure for tests. */
 export function overlayMatches(items: readonly OverlayItem[], filter: string): OverlayItem[] {
   const needle = filter.trim().toLowerCase();
   if (needle.length === 0) return [...items];
-  return items.filter((item) =>
-    `${item.label} ${item.key ?? ""} ${item.meta ?? ""}`.toLowerCase().includes(needle),
-  );
+  return items
+    .map((item, index) => ({
+      item,
+      index,
+      score: fuzzyScore(
+        `${item.label} ${item.key ?? ""} ${item.meta ?? ""}`.toLowerCase(),
+        needle,
+      ),
+    }))
+    .filter((match): match is typeof match & { score: number } => match.score !== null)
+    .sort((a, b) => a.score - b.score || a.index - b.index)
+    .map((match) => match.item);
 }
 
 const MAX_VISIBLE_ROWS = 10;

@@ -66,6 +66,8 @@ export function applyError(state: SearchState, error: string): void {
 
 export function toggleScope(state: SearchState): void {
   state.scope = state.scope === "project" ? "global" : "project";
+  state.rows = [];
+  state.selected = 0;
 }
 
 /** Selecting a project also makes project scope active. */
@@ -74,6 +76,13 @@ export function selectProject(state: SearchState, workspace: string): void {
   state.scope = "project";
   // A result from the previous workspace must never be resumable under the
   // newly displayed scope while cass is answering the replacement search.
+  state.rows = [];
+  state.selected = 0;
+}
+
+/** All-projects is a scope choice too; clear rows until its search answers. */
+export function selectAllProjects(state: SearchState): void {
+  state.scope = "global";
   state.rows = [];
   state.selected = 0;
 }

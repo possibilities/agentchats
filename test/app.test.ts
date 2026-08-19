@@ -10,6 +10,7 @@ const DEFAULTS: Binding[] = [
   { name: "k", ctrl: true, action: "delete-to-line-end" as Binding["action"] },
   { name: "g", ctrl: true, action: "abort" as Binding["action"] },
   { name: "t", ctrl: true, action: "transpose" as Binding["action"] },
+  { name: "tab", action: "insert-tab" as Binding["action"] },
   { name: "a", ctrl: true, action: "move-to-line-start" as Binding["action"] },
 ];
 
@@ -28,6 +29,11 @@ describe("queryKeyBindings", () => {
     expect(bindings.some((b) => b.name === "k" && b.ctrl === true)).toBe(false);
     expect(bindings.some((b) => b.name === "g" && b.ctrl === true)).toBe(false);
     expect(bindings.some((b) => b.name === "t" && b.ctrl === true)).toBe(false);
+  });
+
+  test("tab is released to move focus to the project row", () => {
+    const bindings = queryKeyBindings(DEFAULTS);
+    expect(bindings.some((b) => b.name === "tab")).toBe(false);
   });
 
   test("the rest of the line-editing set survives", () => {

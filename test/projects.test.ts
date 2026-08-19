@@ -1,54 +1,61 @@
-import { describe, expect, test } from "bun:test";
-import { loadProjectChoices, parseProjectChoices } from "../src/tui/projects.ts";
+import { afterEach, describe, expect, test } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import {
+  discoverProjectChoices,
+  projectDisplayPath,
+  scanProjectPaths,
+} from "../src/tui/projects.ts";
 
-const CURRENT = "/Users/op/code/agentchats";
+let temps: string[] = [];
 
-describe("parseProjectChoices", () => {
-  test("leads with the current project, then keeps indexed projects in recent order", () => {
-    const stdout = JSON.stringify({
-      sessions: [
-        { workspace: "/Users/op/code/beta" },
-        { workspace: "/Users/op/code/beta" },
-        { workspace: CURRENT },
-        { workspace: "/opt/shared/gamma" },
-        { workspace: "" },
-      ],
-    });
-    expect(parseProjectChoices(stdout, CURRENT, "/Users/op")).toEqual([
-      { path: CURRENT, display: "~/code/agentchats" },
-      { path: "/Users/op/code/beta", display: "~/code/beta" },
-      { path: "/opt/shared/gamma", display: "/opt/shared/gamma" },
-    ]);
-  });
+afterEach(() => {
+  for (const temp of temps) rmSync(temp, { recursive: true, force: true });
+  temps = [];
+});
 
-  test("malformed output still offers the current project", () => {
-    expect(parseProjectChoices("not json", CURRENT, "/Users/op")).toEqual([
-      { path: CURRENT, display: "~/code/agentchats" },
-    ]);
-  });
+function sandbox(): string {
+  const temp = mkdtempSync(join(tmpdir(), "agentchats-projects-"));
+  temps.push(temp);
+  return temp;
+}
 
-  test("an unavailable home keeps absolute paths absolute", () => {
-    expect(parseProjectChoices('{"sessions":[]}', CURRENT, "")).toEqual([
-      { path: CURRENT, display: CURRENT },
+describe("scanProjectPaths", () => {
+  test("offers roots and their immediate directories without touching transcript history", () => {
+    const home = sandbox();
+    mkdirSync(join(home, "code", "alpha"), { recursive: true });
+    mkdirSync(join(home, "code", "beta"));
+    mkdirSync(join(home, "code", ".hidden"));
+    writeFileSync(join(home, "code", "notes.md"), "");
+    symlinkSync(join(home, "code", "alpha"), join(home, "code", "linked"));
+
+    expect(scanProjectPaths(["~/code", "~/missing"], home)).toEqual([
+      join(home, "code"),
+      join(home, "code", "alpha"),
+      join(home, "code", "beta"),
+      join(home, "code", "linked"),
     ]);
   });
 });
 
-describe("loadProjectChoices", () => {
-  test("asks cass for the complete global session list", async () => {
-    const calls: string[][] = [];
-    const result = await loadProjectChoices(
-      async (args) => {
-        calls.push(args);
-        return { ok: true, stdout: JSON.stringify({ sessions: [] }) };
-      },
-      CURRENT,
-      "/Users/op",
+describe("discoverProjectChoices", () => {
+  test("leads with the opening project and deduplicates the scan", () => {
+    const home = sandbox();
+    const current = join(home, "code", "beta");
+    mkdirSync(join(home, "code", "alpha"), { recursive: true });
+    mkdirSync(current);
+
+    expect(discoverProjectChoices(current, home, ["~/code"])).toEqual([
+      { path: current, display: "~/code/beta" },
+      { path: join(home, "code"), display: "~/code" },
+      { path: join(home, "code", "alpha"), display: "~/code/alpha" },
+    ]);
+  });
+
+  test("an unavailable home keeps absolute paths absolute", () => {
+    expect(projectDisplayPath("/Users/op/code/agentchats", "")).toBe(
+      "/Users/op/code/agentchats",
     );
-    expect(calls).toEqual([["sessions", "--json", "--limit", "0"]]);
-    expect(result).toEqual({
-      ok: true,
-      projects: [{ path: CURRENT, display: "~/code/agentchats" }],
-    });
   });
 });

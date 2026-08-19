@@ -38,4 +38,6 @@ export const GLYPHS = {
   busy: "↻",
   sep: "·",
   ellipsis: "…",
+  prev: "‹",
+  next: "›",
 } as const;

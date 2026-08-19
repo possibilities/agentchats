@@ -74,11 +74,13 @@ and child-agent sessions — are auxiliary. Include them for one invocation with
 `--include-auxiliary`, or toggle them from the ctrl+k command palette. Cass
 continues to index both classes.
 
-Search starts in the current git project (or cwd outside Git). Ctrl+g toggles
-between that selected project and all projects; **choose project** in the
-ctrl+k palette opens a filterable list of projects found in cass's index. The
-opening project leads the list, followed by other projects in recent-activity
-order. Choosing one returns to project scope and refreshes the results there.
+Search starts in the current git project (or cwd outside Git). The project row
+beneath the search field makes that scope a first-class control: Tab focuses
+it, Space or Enter opens its fuzzy chooser, and the arrows step through its
+values. The chooser offers all projects, the opening project, then `~/code`
+and `~/src` one level deep—the same bounded, transcript-independent discovery
+rule as AgentLaunch. Ctrl+g still toggles between the selected project and all
+projects, and **choose project** remains in the ctrl+k palette.
 
 Legacy producers that predate `thread_source` can be classified by their
 Codex `originator` in the optional XDG config at
