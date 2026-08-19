@@ -74,6 +74,12 @@ and child-agent sessions — are auxiliary. Include them for one invocation with
 `--include-auxiliary`, or toggle them from the ctrl+k command palette. Cass
 continues to index both classes.
 
+Search starts in the current git project (or cwd outside Git). Ctrl+g toggles
+between that selected project and all projects; **choose project** in the
+ctrl+k palette opens a filterable list of projects found in cass's index. The
+opening project leads the list, followed by other projects in recent-activity
+order. Choosing one returns to project scope and refreshes the results there.
+
 Legacy producers that predate `thread_source` can be classified by their
 Codex `originator` in the optional XDG config at
 `~/.config/agentchats/config.json` (`$XDG_CONFIG_HOME` honored):

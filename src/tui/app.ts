@@ -18,10 +18,16 @@ import {
   moveSelection,
   scopeLabel,
   scopeWorkspace,
+  selectProject,
   toggleAuxiliary,
   toggleScope,
 } from "./model.ts";
-import { createListOverlay } from "./overlay.ts";
+import { createListOverlay, type OverlayItem } from "./overlay.ts";
+import {
+  loadProjectChoices,
+  type ProjectChoice,
+  projectDisplayPath,
+} from "./projects.ts";
 import { resumeTarget } from "./resume.ts";
 import { GLYPHS, type Line, SIGNAL_ROOM } from "./theme.ts";
 
@@ -112,6 +118,7 @@ export async function runSearch(
   }
 
   const workspace = invocation.workspace ?? projectDirectory();
+  const home = env["HOME"] ?? "";
   const state = createState(workspace, invocation.query, invocation.includeAuxiliary);
   const runner = spawnRunner(binary);
   const classifyForSearch = cachedSessionClassifier((row) =>
@@ -163,8 +170,8 @@ export async function runSearch(
     // nothing else.
     onMouseUp: (event) => {
       event.stopPropagation();
-      if (commands.isOpen()) {
-        dismissPalette();
+      if (commands.isOpen() || projects.isOpen()) {
+        dismissOverlays();
         paint();
       }
     },
@@ -187,8 +194,8 @@ export async function runSearch(
     backgroundColor: SIGNAL_ROOM.canvas,
     onMouseUp: (event) => {
       event.stopPropagation();
-      if (commands.isOpen()) {
-        dismissPalette();
+      if (commands.isOpen() || projects.isOpen()) {
+        dismissOverlays();
         paint();
       }
     },
@@ -239,20 +246,26 @@ export async function runSearch(
   frame.add(body);
   root.add(frame);
 
+  const overlayTokens = {
+    panel: SIGNAL_ROOM.panel,
+    line: SIGNAL_ROOM.line,
+    accent: SIGNAL_ROOM.accent,
+    muted: SIGNAL_ROOM.muted,
+    text: SIGNAL_ROOM.text,
+  };
   const commands = createListOverlay(
     core,
     renderer,
     "search-commands",
-    {
-      panel: SIGNAL_ROOM.panel,
-      line: SIGNAL_ROOM.line,
-      accent: SIGNAL_ROOM.accent,
-      muted: SIGNAL_ROOM.muted,
-      text: SIGNAL_ROOM.text,
-    },
+    overlayTokens,
     { title: " COMMANDS ", empty: "no matching command" },
   );
+  const projects = createListOverlay(core, renderer, "search-projects", overlayTokens, {
+    title: " PROJECTS ",
+    empty: "no matching project",
+  });
   renderer.root.add(commands.root);
+  renderer.root.add(projects.root);
 
   // The palette is modal to the keyboard, and the renderer routes keys to
   // the focused textarea regardless — so opening the palette blurs the
@@ -262,8 +275,9 @@ export async function runSearch(
     query.blur();
     commands.open();
   };
-  const dismissPalette = (): void => {
+  const dismissOverlays = (): void => {
     commands.close();
+    projects.close();
     if (!closed) query.focus();
   };
 
@@ -394,7 +408,7 @@ export async function runSearch(
   };
 
   const listScroll = (direction: "up" | "down"): void => {
-    if (commands.isOpen()) return;
+    if (commands.isOpen() || projects.isOpen()) return;
     moveSelection(state, direction === "down" ? 1 : -1);
     paint();
   };
@@ -419,6 +433,59 @@ export async function runSearch(
     refresh();
   };
 
+  let projectChoices: ProjectChoice[] = [
+    { path: workspace, display: projectDisplayPath(workspace, home) },
+  ];
+  let projectsLoading = false;
+  let projectsLoaded = false;
+  let projectsError: string | null = null;
+
+  const projectItems = (): OverlayItem[] => {
+    if (projectsLoading && !projectsLoaded) {
+      return [{ id: "loading", label: `loading projects${GLYPHS.ellipsis}`, onRun: () => {} }];
+    }
+    if (projectsError !== null) {
+      return [{ id: "error", label: `FAILED ${GLYPHS.sep} ${projectsError}`, onRun: () => {} }];
+    }
+    return projectChoices.map((project) => ({
+      id: project.path,
+      label: project.display,
+      onRun: () => {
+        selectProject(state, project.path);
+        refresh();
+      },
+    }));
+  };
+
+  const loadProjects = (): void => {
+    if (projectsLoading || projectsLoaded) return;
+    projectsLoading = true;
+    paint();
+    void loadProjectChoices(runner, workspace, home).then((result) => {
+      if (closed) return;
+      projectsLoading = false;
+      if (result.ok) {
+        projectChoices = result.projects;
+        projectsLoaded = true;
+        projectsError = null;
+      } else {
+        projectsError = result.error;
+      }
+      paint();
+    });
+  };
+
+  const openProjects = (): void => {
+    query.blur();
+    const at = Math.max(
+      0,
+      projectChoices.findIndex((project) => project.path === state.workspace),
+    );
+    projects.open(at);
+    loadProjects();
+    paint();
+  };
+
   const commandItems = () => [
     { id: "resume", key: "⏎", label: "resume the selected session", onRun: () => commit() },
     {
@@ -427,6 +494,12 @@ export async function runSearch(
       label: state.scope === "project" ? "search all workspaces" : "search this project only",
       meta: state.scope === "project" ? "global" : basename(state.workspace),
       onRun: () => toggleScopeAndSearch(),
+    },
+    {
+      id: "project",
+      label: "choose project",
+      meta: basename(state.workspace),
+      onRun: () => openProjects(),
     },
     {
       id: "window",
@@ -474,8 +547,8 @@ export async function runSearch(
           backgroundColor: SIGNAL_ROOM.canvas,
           onMouseUp: (event) => {
             event.stopPropagation();
-            if (commands.isOpen()) {
-              dismissPalette();
+            if (commands.isOpen() || projects.isOpen()) {
+              dismissOverlays();
               paint();
               return;
             }
@@ -500,6 +573,7 @@ export async function runSearch(
       });
     }
     commands.update({ width: columns, height: rows, items: commandItems() });
+    projects.update({ width: columns, height: rows, items: projectItems() });
     renderer.requestRender();
   };
 
@@ -542,15 +616,16 @@ export async function runSearch(
       shutdown(130);
       return;
     }
-    if (commands.isOpen()) {
+    const openOverlay = projects.isOpen() ? projects : commands.isOpen() ? commands : null;
+    if (openOverlay !== null) {
       if (key.ctrl && key.name === "k") {
-        dismissPalette();
+        dismissOverlays();
         return;
       }
-      commands.handleKey(key);
+      openOverlay.handleKey(key);
       // The overlay may have closed itself (escape, or enter running an
       // item); focus follows it back to the query either way.
-      if (!commands.isOpen() && !closed) query.focus();
+      if (!commands.isOpen() && !projects.isOpen() && !closed) query.focus();
       return;
     }
     if (key.ctrl && key.name === "k") {

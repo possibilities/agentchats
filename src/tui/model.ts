@@ -68,6 +68,16 @@ export function toggleScope(state: SearchState): void {
   state.scope = state.scope === "project" ? "global" : "project";
 }
 
+/** Selecting a project also makes project scope active. */
+export function selectProject(state: SearchState, workspace: string): void {
+  state.workspace = workspace;
+  state.scope = "project";
+  // A result from the previous workspace must never be resumable under the
+  // newly displayed scope while cass is answering the replacement search.
+  state.rows = [];
+  state.selected = 0;
+}
+
 export function toggleAuxiliary(state: SearchState): void {
   state.includeAuxiliary = !state.includeAuxiliary;
 }

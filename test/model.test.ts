@@ -9,6 +9,7 @@ import {
   moveSelection,
   scopeLabel,
   scopeWorkspace,
+  selectProject,
   type SearchState,
   toggleAuxiliary,
   toggleScope,
@@ -64,6 +65,19 @@ describe("selection discipline", () => {
     expect(scopeLabel(state)).toBe("everywhere");
     toggleScope(state);
     expect(scopeWorkspace(state)).toBe("/Users/op/code/alpha");
+  });
+
+  test("choosing another project restores project scope and resets selection", () => {
+    const state = stateWith([sessionRow(0), sessionRow(1)]);
+    state.selected = 1;
+    toggleScope(state);
+    selectProject(state, "/Users/op/code/beta");
+    expect(state.scope).toBe("project");
+    expect(state.workspace).toBe("/Users/op/code/beta");
+    expect(state.selected).toBe(0);
+    expect(state.rows).toEqual([]);
+    expect(scopeWorkspace(state)).toBe("/Users/op/code/beta");
+    expect(scopeLabel(state)).toBe("beta");
   });
 
   test("auxiliary sessions are opt-in and visible in the scope label", () => {
