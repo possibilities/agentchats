@@ -35,16 +35,32 @@ die() {
 
 usage() {
     cat <<'EOF'
-Usage: agentchats state [--workspace <dir>] [--budget <tokens>]
+Usage: agentchats state  [--workspace <dir>] [--budget <tokens>]
+       agentchats search [query…] [--workspace <dir>]
 
-Print a budget-capped bearings dump of recent coding-agent sessions for one
-workspace, newest first. Made for agents re-orienting in a project; searching
-and reading the sessions themselves is cass (see the chats skill).
+state    Print a budget-capped bearings dump of recent coding-agent sessions
+         for one workspace, newest first. Made for agents re-orienting in a
+         project; searching and reading the sessions themselves is cass (see
+         the chats skill).
+search   Live-search sessions in a full-screen picker and resume the picked
+         one on the herdr surface. Runs under a surface host, which reads
+         session directives from stdout: agentsurface host -- agentchats search
 
-Options:
+Options (state):
   --workspace <dir>   Project directory (default: the current git project)
   --budget <tokens>   Approximate output budget (default: 400, ~4 chars/token)
 EOF
+}
+
+search() {
+    command -v bun >/dev/null 2>&1 \
+        || die "agentchats search needs bun; install it with AgentStart"
+    local self repo
+    self=$(readlink -f "${BASH_SOURCE[0]}")
+    repo=$(cd "$(dirname "$self")/.." && pwd)
+    [ -d "$repo/node_modules/@opentui/core" ] \
+        || die "dependencies are missing; run: (cd $repo && bun install)"
+    exec bun "$repo/src/tui/main.ts" "$@"
 }
 
 state() {
@@ -128,6 +144,10 @@ case "${1:-}" in
     state)
         shift
         state "$@"
+        ;;
+    search)
+        shift
+        search "$@"
         ;;
     -h|--help|'')
         usage

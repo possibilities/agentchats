@@ -89,6 +89,7 @@ case "${1:-}" in
 cass (coding agent session search):
   curl -fsSL $installer_url | bash -s -- --verify [--version <gh-resolved tag>]
   ln -sfn $repo_root/bin/agentchats $dest_dir/agentchats   # the agentchats CLI, linked editable
+  (cd $repo_root && bun install --frozen-lockfile)         # the search TUI's dependencies (skipped without bun)
   cass index          # incremental when serving; cass index --full otherwise
                       # yields to any rebuild another process has in flight
   cass search "" --robot --limit 1   # the gate: search must serve after indexing
@@ -135,6 +136,17 @@ fi
 # contract the other agent* checkouts use for their own CLIs.
 printf 'Linking the agentchats CLI.\n'
 ln -sfn "$repo_root/bin/agentchats" "$dest_dir/agentchats"
+
+# The search TUI runs from this checkout under bun; its dependencies are the
+# checkout's node_modules. A machine without bun keeps `agentchats state`
+# and skips the TUI — bun arrives with AgentStart's stack, not here.
+if command -v bun >/dev/null 2>&1; then
+    printf 'Installing the search TUI dependencies.\n'
+    (cd "$repo_root" && bun install --frozen-lockfile >/dev/null) \
+        || die "bun install failed in $repo_root"
+else
+    printf 'bun is not installed; agentchats search stays unavailable until it is.\n' >&2
+fi
 
 # Prepare the index. A serving install refreshes incrementally; a first
 # install or a broken one rebuilds fully. An incremental refresh that fails

@@ -1,0 +1,22 @@
+{
+  "name": "agentchats",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Searchable coding-agent session history: the agentchats CLI and resume-search TUI over cass",
+  "license": "MIT",
+  "engines": {
+    "bun": ">=1.3.14"
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "bunx tsc --noEmit"
+  },
+  "dependencies": {
+    "@opentui/core": "^0.3.0"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.0",
+    "typescript": "^5.9.2"
+  }
+}

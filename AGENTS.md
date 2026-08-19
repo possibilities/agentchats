@@ -13,7 +13,12 @@ three things and nothing else:
 - `bin/agentchats` — the small CLI this repository owns on top of cass,
   linked editable into `~/.local/bin`. `agentchats state` is the
   workspace-scoped, budget-capped bearings dump agents run to re-orient;
-  cass itself remains the search surface.
+  cass itself remains the search surface. `agentchats search` is the
+  surface-hosted resume picker (`src/tui/`, bun + OpenTUI): a Signal Room
+  TUI that live-searches sessions via cass and, per pick, writes one
+  session directive to stdout for agentsurface to realize as a herdr
+  resume — the `surface-handoff-protocol` wiki page is that contract, and
+  a pick that cannot resume faithfully is a fatal error, never a fallback.
 - `skills/chats/` — the source of the `chats` agent skill, the runbook that
   teaches agents to wield cass expertly. The `skills/<name>/` layout is the
   convention AgentStart's per-checkout skill scan discovers.
@@ -61,6 +66,11 @@ globally. Do not add a second installation or synchronization path here.
   so edits are live once the link exists; `scripts/install.sh --install`
   creates it. Exercise `bin/agentchats state` against a workspace with
   sessions, an empty one (must print nothing), and a PATH without cass.
+- TUI changes: `bun test` and `bunx tsc --noEmit` here, then a pty smoke —
+  the picker under `expect` with stdout captured must emit a valid resume
+  directive on enter and nothing on escape. The TUI follows the
+  `fleet-tui-design` wiki contract (chromeless, ctrl+k palette, Signal
+  Room tokens in `src/tui/theme.ts`).
 - Skill changes: reinstall globally with AgentStart's scan
   (`~/code/agentstart/scripts/sync-skills`) or directly with
   `npx --yes skills add "$HOME/code/agentchats" --agent codex claude-code
