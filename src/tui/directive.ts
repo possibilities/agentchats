@@ -17,6 +17,9 @@ export interface SessionDirective {
   worktree: boolean;
   focus: boolean;
   agent: { kind: string; args: string[] };
+  /** The native session this directive continues. The host dedups on it: a
+   * session already live on the surface is focused, not resumed again. */
+  session_id: string;
   intent: string | null;
   record?: Record<string, unknown>;
 }
@@ -39,6 +42,7 @@ export function buildResumeDirective(
     worktree: false,
     focus: true,
     agent: { kind: target.kind, args: ["--x-resume", target.sessionId] },
+    session_id: target.sessionId,
     intent: null,
     record: { tool: "agentchats", query: record.query, source_path: record.source_path },
   };

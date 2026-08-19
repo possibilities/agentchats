@@ -25,6 +25,7 @@ describe("buildResumeDirective", () => {
       "intent",
       "record",
       "schema_version",
+      "session_id",
       "worktree",
     ]);
     expect(directive.schema_version).toBe(DIRECTIVE_SCHEMA_VERSION);
@@ -42,6 +43,11 @@ describe("buildResumeDirective", () => {
     const directive = buildResumeDirective(TARGET, { query: "", source_path: "/s.jsonl" });
     expect(directive.agent.kind).toBe("claude");
     expect(directive.agent.args).toEqual(["--x-resume", TARGET.sessionId]);
+  });
+
+  test("declares its native session so the host focuses a live one instead", () => {
+    const directive = buildResumeDirective(TARGET, { query: "", source_path: "/s.jsonl" });
+    expect(directive.session_id).toBe(TARGET.sessionId);
   });
 
   test("carries no intent and no model or effort anywhere: continuity is the harness's", () => {
