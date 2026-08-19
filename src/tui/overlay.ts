@@ -205,9 +205,16 @@ export function createListOverlay(
       ];
       let used = 2;
       if (keyWidth > 0) {
-        const key = `[${item.key ?? ""}]`.padEnd(keyWidth + 3);
-        chunks.push(core.bold(core.fg(tokens.accent)(key)));
-        used += key.length;
+        const keyCell =
+          item.key === undefined
+            ? " ".repeat(keyWidth + 3)
+            : `[${item.key}]`.padEnd(keyWidth + 3);
+        chunks.push(
+          item.key === undefined
+            ? core.fg(tokens.panel)(keyCell)
+            : core.bold(core.fg(tokens.accent)(keyCell)),
+        );
+        used += keyCell.length;
       }
       const meta = item.meta !== undefined ? ` · ${item.meta}` : "";
       const label = truncate(item.label, Math.max(4, inner - used - meta.length));
