@@ -33,7 +33,9 @@ import { GLYPHS, type Line, SIGNAL_ROOM } from "./theme.ts";
  * resume.ts, and cass.ts.
  */
 
-const SEARCH_LIMIT = 30;
+// Hits collapse to one row per session, so fetch deep enough that a chatty
+// session cannot starve the list.
+const SEARCH_LIMIT = 120;
 const RECENT_LIMIT = 20;
 const DEBOUNCE_MS = 150;
 

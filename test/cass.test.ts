@@ -67,6 +67,21 @@ describe("parseHits", () => {
     expect(rows[0]?.workspace).toBe(WS);
   });
 
+  test("many hits in one session collapse to its best-ranked row", () => {
+    const multi = JSON.stringify({
+      hits: [
+        { agent: "claude_code", workspace: WS, source_path: "/store/a.jsonl", snippet: "best", line_number: 3 },
+        { agent: "claude_code", workspace: WS, source_path: "/store/a.jsonl", snippet: "worse", line_number: 90 },
+        { agent: "codex", workspace: WS, source_path: "/store/b.jsonl", snippet: "other" },
+        { agent: "claude_code", workspace: WS, source_path: "/store/a.jsonl", snippet: "worst" },
+      ],
+    });
+    const rows = parseHits(multi, null);
+    expect(rows.map((row) => row.path)).toEqual(["/store/a.jsonl", "/store/b.jsonl"]);
+    expect(rows[0]?.snippet).toBe("best");
+    expect(rows[0]?.line).toBe(3);
+  });
+
   test("garbage is an empty list, not a crash", () => {
     expect(parseHits("not json", null)).toEqual([]);
     expect(parseHits("{}", null)).toEqual([]);

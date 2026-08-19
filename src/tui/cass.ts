@@ -105,7 +105,11 @@ function text(value: unknown): string {
   return typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
 }
 
-/** Search hits, in cass's order (score already applied server-side). */
+/** Search hits, in cass's order (score already applied server-side),
+ * collapsed to one row per session: cass ranks messages, the picker picks
+ * sessions, and a session matching in ten places is still one session. The
+ * first hit per path is its best-ranked one, so order survives the
+ * collapse. */
 export function parseHits(stdout: string, scope: string | null): SessionRow[] {
   let parsed: unknown;
   try {
@@ -116,12 +120,15 @@ export function parseHits(stdout: string, scope: string | null): SessionRow[] {
   const hits = (parsed as { hits?: unknown }).hits;
   if (!Array.isArray(hits)) return [];
   const rows: SessionRow[] = [];
+  const seen = new Set<string>();
   for (const hit of hits) {
     const record = hit as Record<string, unknown>;
     const workspace = text(record["workspace"]);
     if (scope !== null && workspace !== scope) continue;
     const path = text(record["source_path"]);
     if (path === "") continue;
+    if (seen.has(path)) continue;
+    seen.add(path);
     rows.push({
       agent: text(record["agent"]),
       workspace,
