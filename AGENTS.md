@@ -27,7 +27,8 @@ AgentStart (`~/code/agentstart`) owns AI-stack installation and invokes both:
 the installer through this repository's `scripts/install.sh --install`
 (`scripts/install-agent-clis`), the skill through the `agent*` checkout skill
 scan (`scripts/sync-skills`), which ships every `skills/<name>/` directory
-globally. Do not add a second installation or synchronization path here.
+through the private core plugin. Do not add a second installation or
+synchronization path here.
 
 ## Conventions
 
@@ -71,22 +72,22 @@ globally. Do not add a second installation or synchronization path here.
   directive on enter and nothing on escape. The TUI follows the
   `fleet-tui-design` wiki contract (chromeless, ctrl+k palette, Signal
   Room tokens in `src/tui/theme.ts`).
-- Skill changes: reinstall globally with AgentStart's scan
-  (`~/code/agentstart/scripts/sync-skills`) or directly with
-  `npx --yes skills add "$HOME/code/agentchats" --agent codex claude-code
-  pi --skill chats --global --yes`, then confirm the installed copies match
-  this checkout.
+- Skill changes: rerun AgentStart's private plugin scan
+  (`~/code/agentstart/scripts/sync-skills`), then confirm the installed plugin
+  copy matches this checkout.
 
 ## The fleet
 
 This checkout is one of the agent* fleet under `~/code`. Shared machinery
 lives in two siblings, and some changes here must cascade:
 
-- Skills under `skills/<name>/` ship globally through AgentStart's scan
+- Skills under `skills/<name>/` ship through AgentStart's private core plugin
   (`~/code/agentstart/scripts/sync-skills`, run six-hourly by the scheduled
-  updater): a SKILL.md edit is live within six hours, or on demand by
-  running that script. Whether a new skill earns a TOOLS.md advertisement
-  line is a deliberate decision — `agentwiki get tool-advertisement-policy`.
+  updater): Claude Code and Codex expose them under the `agentstart-core`
+  plugin namespace, while Pi uses the plain skill name. A SKILL.md edit is
+  live within six hours, or on demand by running that script. Whether a new
+  skill earns a TOOLS.md advertisement line is a deliberate decision —
+  `agentwiki get tool-advertisement-policy`.
 - Adding or removing a call to another fleet tool changes the fleet map:
   update `~/code/agentstart/skills/fleet/MAP.md` (served by the `fleet`
   skill, every edge with evidence) in the same change.

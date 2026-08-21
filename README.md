@@ -31,18 +31,15 @@ Three pieces do that:
 
 AgentStart owns installation. A full `~/code/agentstart/scripts/install.sh
 --install` runs the cass installer, and its per-checkout skill scan
-(`scripts/sync-skills`) ships `skills/chats/` globally for Codex, Claude
-Code, and Pi.
+(`scripts/sync-skills`) ships `skills/chats/` through the private core plugin
+for Codex, Claude Code, and Pi.
 
 Directly, from this checkout:
 
 ```sh
 scripts/install.sh --install   # install/upgrade cass, prepare the index
 scripts/install.sh --check     # print the plan without changing anything
-
-npx --yes skills add "$HOME/code/agentchats" \
-    --agent codex claude-code pi \
-    --skill chats --global --yes
+~/code/agentstart/scripts/sync-skills   # refresh the private core plugin
 ```
 
 ## The agentchats CLI
