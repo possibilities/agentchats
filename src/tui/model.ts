@@ -46,9 +46,15 @@ export function createState(
   };
 }
 
-export function moveSelection(state: SearchState, delta: number): void {
-  if (state.rows.length === 0) return;
-  state.selected = Math.min(state.rows.length - 1, Math.max(0, state.selected + delta));
+/** Keyboard steps wrap at the ends — only an exact edge step wraps, a larger
+ * jump clamps to the end first; the wheel stays clamped (wrap = false). */
+export function moveSelection(state: SearchState, delta: number, wrap = false): void {
+  const count = state.rows.length;
+  if (count === 0) return;
+  const next = state.selected + delta;
+  if (wrap && next < 0 && state.selected === 0) state.selected = count - 1;
+  else if (wrap && next >= count && state.selected === count - 1) state.selected = 0;
+  else state.selected = Math.min(count - 1, Math.max(0, next));
 }
 
 export function applyRows(state: SearchState, source: "recent" | "search", rows: SessionRow[]): void {

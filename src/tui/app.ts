@@ -445,9 +445,9 @@ export async function runSearch(
     shutdown(0);
   };
 
-  const listScroll = (direction: "up" | "down"): void => {
+  const listScroll = (direction: "up" | "down", wrap = false): void => {
     if (commands.isOpen() || projects.isOpen()) return;
-    moveSelection(state, direction === "down" ? 1 : -1);
+    moveSelection(state, direction === "down" ? 1 : -1, wrap);
     paint();
   };
 
@@ -510,7 +510,9 @@ export async function runSearch(
             1,
             projectChoices.findIndex((project) => project.path === state.workspace) + 1,
           );
-    const at = Math.max(0, Math.min(choices.length - 1, current + delta));
+    // The spinner wraps like the launch form's rows: past either end
+    // cycles to the other.
+    const at = (current + delta + choices.length) % choices.length;
     const choice = choices[at];
     if (choice === undefined) return;
     if (choice === null) selectAllProjects(state);
@@ -741,11 +743,11 @@ export async function runSearch(
       return;
     }
     if (key.name === "up" || (key.ctrl === true && key.name === "p")) {
-      listScroll("up");
+      listScroll("up", true);
       return;
     }
     if (key.name === "down" || (key.ctrl === true && key.name === "n")) {
-      listScroll("down");
+      listScroll("down", true);
       return;
     }
     // Everything else belongs to the query field; the microtask runs after

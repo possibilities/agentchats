@@ -140,10 +140,15 @@ export function createListOverlay(
 
   const matches = (): OverlayItem[] => overlayMatches(state.items, filter);
 
-  const moveSelection = (delta: number): void => {
+  /** Keyboard steps wrap at the ends; the wheel stays clamped — spatial
+   * scrolling that teleports across the list reads as a glitch. */
+  const moveSelection = (delta: number, wrap = false): void => {
     const count = matches().length;
     if (count === 0) return;
-    selected = Math.min(count - 1, Math.max(0, selected + delta));
+    const next = selected + delta;
+    if (wrap && next < 0 && selected === 0) selected = count - 1;
+    else if (wrap && next >= count && selected === count - 1) selected = 0;
+    else selected = Math.min(count - 1, Math.max(0, next));
     layout();
     renderer.requestRender();
   };
@@ -273,11 +278,11 @@ export function createListOverlay(
       // Left/right alias up/down — the form rows' spinner habit carries
       // into the list, left up it and right down it.
       if (key.name === "up" || key.name === "left") {
-        moveSelection(-1);
+        moveSelection(-1, true);
         return true;
       }
       if (key.name === "down" || key.name === "right") {
-        moveSelection(1);
+        moveSelection(1, true);
         return true;
       }
       if (key.name === "backspace") {

@@ -57,6 +57,16 @@ describe("selection discipline", () => {
     expect(state.selected).toBe(0);
   });
 
+  test("keyboard steps wrap at the edges, larger jumps still clamp", () => {
+    const state = stateWith([sessionRow(0), sessionRow(1), sessionRow(2)]);
+    moveSelection(state, -1, true);
+    expect(state.selected).toBe(2);
+    moveSelection(state, 1, true);
+    expect(state.selected).toBe(0);
+    moveSelection(state, 5, true);
+    expect(state.selected).toBe(2);
+  });
+
   test("scope toggles between the project and everywhere", () => {
     const state = stateWith([sessionRow(0)]);
     expect(scopeWorkspace(state)).toBe("/Users/op/code/alpha");
