@@ -42,6 +42,13 @@ scripts/install.sh --check     # print the plan without changing anything
 ~/code/agentstart/scripts/sync-skills   # refresh the common capability pack
 ```
 
+The installer follows the latest upstream release unless that exact artifact
+is quarantined for a reproduced installation failure. Cass `v0.6.26` is held
+at `v0.6.25` because its lexical rebuild can deadlock before the upstream
+GH#413 fix; any later release is eligible automatically. Search and index
+subprocesses are time-bounded so a regression fails the install with a useful
+error instead of parking AgentStart indefinitely.
+
 ## The agentchats CLI
 
 ```sh

@@ -38,7 +38,11 @@ synchronization path here.
   a present checkout that fails to install is a real error and propagates.
 - cass tracks the latest upstream release deliberately, like every agent CLI
   the fleet installs. The release tag is resolved with the authenticated GitHub
-  CLI first so reruns never exhaust the anonymous API limit.
+  CLI first so reruns never exhaust the anonymous API limit. An exact release
+  proven to wedge this machine may be quarantined in the installer with the
+  last known-good release as its narrow fallback; name the upstream fix and
+  make every later release eligible automatically rather than turning the
+  exception into a standing pin.
 - The index prepares incrementally when healthy and rebuilds fully when
   missing, unhealthy, or after a failed incremental refresh. Freshness
   between installs is the skill's job (`cass triage`), not a daemon's.

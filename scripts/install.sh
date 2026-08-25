@@ -14,6 +14,10 @@ upstream_repo=coding_agent_session_search
 installer_url="https://raw.githubusercontent.com/$upstream_owner/$upstream_repo/main/install.sh"
 dest_dir="$HOME/.local/bin"
 repo_root=$(cd "$(dirname "$0")/.." && pwd)
+cass_bad_release=v0.6.26
+cass_safe_release=v0.6.25
+cass_search_timeout_seconds=180
+cass_index_timeout_seconds=1800
 
 usage() {
     cat <<'EOF'
@@ -50,6 +54,68 @@ resolve_version() {
     printf '%s' "$version"
 }
 
+# v0.6.26 was cut before upstream's GH#413 lexical-pipeline deadlock fix. On
+# this machine it can park every rebuild worker at zero processed conversations
+# while keeping the run lock alive forever. Keep following latest releases, but
+# quarantine that one exact artifact; a later release automatically clears the
+# hold without another local edit.
+select_install_version() {
+    local resolved_version=$1
+
+    case "$resolved_version" in
+        "$cass_bad_release"|"${cass_bad_release#v}")
+            printf 'Cass %s has a known lexical rebuild deadlock; installing %s until a fixed release is published.\n' \
+                "$cass_bad_release" "$cass_safe_release" >&2
+            printf '%s' "$cass_safe_release"
+            ;;
+        '')
+            printf 'Could not safely resolve the latest cass release; installing known-good %s.\n' \
+                "$cass_safe_release" >&2
+            printf '%s' "$cass_safe_release"
+            ;;
+        *)
+            printf '%s' "$resolved_version"
+            ;;
+    esac
+}
+
+# Cass normally has its own bounded machine-mode behavior, but derived-index
+# repair can run below the search command before that budget engages. Bound the
+# child process here as an installer contract so a bad release cannot park all
+# of AgentStart indefinitely. TERM gives cass a chance to close its database;
+# KILL is only the five-second fallback for an already wedged process.
+run_with_timeout() {
+    local timeout_seconds=$1
+    local description=$2
+    local command_pid timer_pid status=0
+    shift 2
+
+    "$@" &
+    command_pid=$!
+    (
+        sleep "$timeout_seconds"
+        kill -TERM "$command_pid" 2>/dev/null || exit 0
+        sleep 5
+        kill -KILL "$command_pid" 2>/dev/null || true
+    ) &
+    timer_pid=$!
+
+    wait "$command_pid" || status=$?
+    kill "$timer_pid" 2>/dev/null || true
+    wait "$timer_pid" 2>/dev/null || true
+
+    case "$status" in
+        137|143)
+            printf 'Agentchats installer: %s timed out after %s seconds.\n' \
+                "$description" "$timeout_seconds" >&2
+            return 124
+            ;;
+        *)
+            return "$status"
+            ;;
+    esac
+}
+
 cass_healthy() {
     "$dest_dir/cass" health >/dev/null 2>&1
 }
@@ -80,7 +146,13 @@ wait_for_index_turn() {
 # can report transient states under concurrent cass activity that a served
 # search disproves; a genuinely broken index fails this probe too.
 cass_serves_search() {
-    "$dest_dir/cass" search "" --robot --limit 1 >/dev/null 2>&1
+    run_with_timeout "$cass_search_timeout_seconds" "cass search gate" \
+        "$dest_dir/cass" search "" --robot --limit 1 >/dev/null 2>&1
+}
+
+cass_index() {
+    run_with_timeout "$cass_index_timeout_seconds" "cass index" \
+        "$dest_dir/cass" index "$@"
 }
 
 case "${1:-}" in
@@ -119,16 +191,10 @@ command -v curl >/dev/null 2>&1 || die "curl is required"
 mkdir -p "$dest_dir"
 export PATH="$dest_dir:$PATH"
 
-version=$(resolve_version)
-if [ -n "$version" ]; then
-    printf 'Installing cass %s with its official installer.\n' "$version"
-    /usr/bin/curl -fsSL "$installer_url" \
-        | DEST="$dest_dir" /bin/bash -s -- --verify --version "$version"
-else
-    printf 'Could not resolve the latest cass release with gh; letting the installer choose.\n' >&2
-    /usr/bin/curl -fsSL "$installer_url" \
-        | DEST="$dest_dir" /bin/bash -s -- --verify
-fi
+version=$(select_install_version "$(resolve_version)")
+printf 'Installing cass %s with its official installer.\n' "$version"
+/usr/bin/curl -fsSL "$installer_url" \
+    | DEST="$dest_dir" /bin/bash -s -- --verify --version "$version"
 
 [ -x "$dest_dir/cass" ] || die "cass did not install to $dest_dir/cass"
 
@@ -156,16 +222,16 @@ fi
 wait_for_index_turn
 if cass_serves_search; then
     printf 'Refreshing the cass index incrementally.\n'
-    if ! "$dest_dir/cass" index; then
+    if ! cass_index; then
         wait_for_index_turn
         if ! cass_serves_search; then
             printf 'Incremental index failed; rebuilding fully.\n' >&2
-            "$dest_dir/cass" index --full
+            cass_index --full
         fi
     fi
 else
     printf 'Building the cass index.\n'
-    "$dest_dir/cass" index --full
+    cass_index --full
 fi
 wait_for_index_turn
 
