@@ -23,8 +23,7 @@ app-server, realtime surface, or child-agent facility. A Codex rollout with an
 explicit non-`user` thread source is auxiliary and opt-in in the search picker;
 configured originators extend that classification to legacy source-less
 rollouts. Workspace never decides the class.
-_Avoid_: AgentVoice session (AgentVoice is only one producer), hidden session
-(cass still indexes it).
+_Avoid_: producer-specific session, hidden session (cass still indexes it).
 
 **Agentchats config** — the optional XDG JSON file whose auxiliary policy
 names legacy Codex originators. It refines the picker without changing cass's

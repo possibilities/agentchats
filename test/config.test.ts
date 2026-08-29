@@ -26,9 +26,9 @@ describe("Agentchats config", () => {
 
   test("decodes and deduplicates configured Codex originators", () => {
     const config = decodeAgentchatsConfig({
-      auxiliary: { "codex-originators": [" agentvoice ", "agentvoice"] },
+      auxiliary: { "codex-originators": [" automation-worker ", "automation-worker"] },
     });
-    expect([...config.auxiliaryCodexOriginators]).toEqual(["agentvoice"]);
+    expect([...config.auxiliaryCodexOriginators]).toEqual(["automation-worker"]);
   });
 
   test("rejects misspelled keys and malformed originators", () => {
@@ -49,9 +49,9 @@ describe("Agentchats config", () => {
     mkdirSync(join(xdg, "agentchats"), { recursive: true });
     writeFileSync(
       join(xdg, "agentchats", "config.json"),
-      JSON.stringify({ auxiliary: { "codex-originators": ["agentvoice"] } }),
+      JSON.stringify({ auxiliary: { "codex-originators": ["automation-worker"] } }),
     );
     const present = await loadAgentchatsConfig({ HOME: temp, XDG_CONFIG_HOME: xdg });
-    expect(present.auxiliaryCodexOriginators.has("agentvoice")).toBe(true);
+    expect(present.auxiliaryCodexOriginators.has("automation-worker")).toBe(true);
   });
 });

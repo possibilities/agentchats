@@ -40,13 +40,13 @@ describe("list overlay", () => {
 
 describe("overlayMatches", () => {
   const items = [
-    { id: "voice", label: "~/code/agentvoice", onRun: () => {} },
+    { id: "demo", label: "~/code/agentdemo", onRun: () => {} },
     { id: "chats", label: "~/code/agentchats", onRun: () => {} },
     { id: "surface", label: "~/code/agentsurface", onRun: () => {} },
   ];
 
   test("prefers exact substrings and admits compact fuzzy subsequences", () => {
     expect(overlayMatches(items, "chat").map((item) => item.id)).toEqual(["chats"]);
-    expect(overlayMatches(items, "agtvc").map((item) => item.id)).toEqual(["voice"]);
+    expect(overlayMatches(items, "agtdm").map((item) => item.id)).toEqual(["demo"]);
   });
 });

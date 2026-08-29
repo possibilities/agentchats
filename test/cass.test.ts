@@ -79,7 +79,7 @@ describe("Codex session classification", () => {
     const worker = join(temp, "worker.jsonl");
     const legacy = join(temp, "legacy.jsonl");
     writeFileSync(user, rollout("user", "user"));
-    writeFileSync(worker, rollout("worker", "agentvoice-worker"));
+    writeFileSync(worker, rollout("worker", "automation-worker"));
     writeFileSync(legacy, rollout("legacy", null));
 
     expect(await classifySession(row(user))).toBe("full-harness");
@@ -96,11 +96,11 @@ describe("Codex session classification", () => {
   });
 
   test("configured originators classify only legacy sessions as auxiliary", async () => {
-    const legacy = join(temp, "legacy-agentvoice.jsonl");
-    const terrestrial = join(temp, "terrestrial-agentvoice.jsonl");
-    writeFileSync(legacy, rollout("legacy-agentvoice", null, "agentvoice"));
-    writeFileSync(terrestrial, rollout("terrestrial-agentvoice", "user", "agentvoice"));
-    const configured = new Set(["agentvoice"]);
+    const legacy = join(temp, "legacy-automation.jsonl");
+    const terrestrial = join(temp, "terrestrial-automation.jsonl");
+    writeFileSync(legacy, rollout("legacy-automation", null, "automation-worker"));
+    writeFileSync(terrestrial, rollout("terrestrial-automation", "user", "automation-worker"));
+    const configured = new Set(["automation-worker"]);
 
     expect(await classifySession(row(legacy))).toBe("full-harness");
     expect(await classifySession(row(legacy), configured)).toBe("auxiliary");
@@ -115,9 +115,9 @@ describe("Codex session classification", () => {
     ).toBe("user");
     expect(
       rolloutMetadata(
-        JSON.stringify({ type: "session_meta", payload: { originator: "agentvoice" } }),
+        JSON.stringify({ type: "session_meta", payload: { originator: "automation-worker" } }),
       ),
-    ).toEqual({ threadSource: null, originator: "agentvoice" });
+    ).toEqual({ threadSource: null, originator: "automation-worker" });
     expect(rolloutThreadSource("not json\n")).toBeUndefined();
   });
 
