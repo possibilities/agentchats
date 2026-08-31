@@ -20,13 +20,32 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install SQLite and flock prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes sqlite3 util-linux
+          sqlite3 --version
+          flock --version
+
       - name: Validate shell
         run: |
-          bash -n scripts/install.sh bin/agentchats
-          shellcheck --shell=bash scripts/install.sh bin/agentchats
+          bash -n scripts/install.sh scripts/run-with-timeout bin/agentchats
+          shellcheck --shell=bash scripts/install.sh scripts/run-with-timeout bin/agentchats
+          node --check scripts/retire-pi-raw-mirror.mjs
+          node --check scripts/delete-retired-pi-cass-orphan.mjs
+
+      - name: Test installer primitives and raw-mirror retirement
+        run: node --test test/run-with-timeout.node.mjs test/retire-pi-raw-mirror.node.mjs test/delete-retired-pi-cass-orphan.node.mjs
 
       - name: Exercise read-only commands
         run: |
           scripts/install.sh --check
           scripts/install.sh --help
+          scripts/retire-pi-raw-mirror.mjs --help
+          scripts/delete-retired-pi-cass-orphan.mjs --help
           bin/agentchats --help

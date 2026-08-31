@@ -1,0 +1,134 @@
+#!/bin/bash
+
+set -u
+
+active_timeout_pid=
+active_timeout_pgid=
+
+# shellcheck disable=SC2329 # called through the signal-trap handler
+reap_timeout_tree() {
+    local signal=$1 killer_pid
+
+    [ -n "$active_timeout_pid" ] || return 0
+    kill -"$signal" "$active_timeout_pid" 2>/dev/null || true
+
+    # GNU timeout normally gives its child a private process group. Signal the
+    # group only after proving that its id is the timeout pid; otherwise a
+    # startup race could target this wrapper's own process group.
+    if [ "$active_timeout_pgid" = "$active_timeout_pid" ]; then
+        kill -"$signal" -- "-$active_timeout_pgid" 2>/dev/null || true
+    fi
+
+    (
+        sleep 5
+        if [ "$active_timeout_pgid" = "$active_timeout_pid" ]; then
+            kill -KILL -- "-$active_timeout_pgid" 2>/dev/null || true
+        fi
+        kill -KILL "$active_timeout_pid" 2>/dev/null || true
+    ) &
+    killer_pid=$!
+    wait "$active_timeout_pid" 2>/dev/null || true
+    kill "$killer_pid" 2>/dev/null || true
+    wait "$killer_pid" 2>/dev/null || true
+    active_timeout_pid=
+    active_timeout_pgid=
+}
+
+# shellcheck disable=SC2329 # invoked by TERM/INT/HUP traps below
+terminate_runner() {
+    local signal=$1 status=$2
+
+    trap - TERM INT HUP
+    reap_timeout_tree "$signal"
+    exit "$status"
+}
+
+trap 'terminate_runner TERM 143' TERM
+trap 'terminate_runner INT 130' INT
+trap 'terminate_runner HUP 129' HUP
+
+usage() {
+    printf 'Usage: run-with-timeout <seconds> <description> <command> [args...]\n' >&2
+}
+
+[ "$#" -ge 3 ] || {
+    usage
+    exit 64
+}
+
+timeout_seconds=$1
+description=$2
+shift 2
+
+case "$timeout_seconds" in
+    ''|*[!0-9]*|0)
+        usage
+        exit 64
+        ;;
+esac
+
+timeout_bin=${AGENTCHATS_TIMEOUT_BIN:-}
+if [ -z "$timeout_bin" ]; then
+    for candidate in /opt/homebrew/bin/timeout /usr/bin/timeout; do
+        if [ -x "$candidate" ]; then
+            timeout_bin=$candidate
+            break
+        fi
+    done
+fi
+if [ -z "$timeout_bin" ] && command -v timeout >/dev/null 2>&1; then
+    timeout_bin=$(command -v timeout)
+fi
+if [ -z "$timeout_bin" ] && command -v gtimeout >/dev/null 2>&1; then
+    timeout_bin=$(command -v gtimeout)
+fi
+[ -n "$timeout_bin" ] && [ -x "$timeout_bin" ] || {
+    printf 'run-with-timeout: GNU timeout is required\n' >&2
+    exit 69
+}
+
+# The installer alone owns Cass's writer lock. Close its inherited descriptor
+# in this wrapper before any timed process exists; neither timeout nor any
+# descendant can extend the lock lifetime after the installer has reaped us.
+{ exec 9>&-; } 2>/dev/null || true
+
+workdir=${AGENTCHATS_TIMEOUT_WORKDIR:-}
+if [ -n "$workdir" ]; then
+    [ "${workdir#/}" != "$workdir" ] && [ -d "$workdir" ] && [ ! -L "$workdir" ] || {
+        printf 'run-with-timeout: unsafe working directory: %s\n' "$workdir" >&2
+        exit 64
+    }
+    cd "$workdir" || exit 69
+fi
+
+# Run timeout asynchronously so TERM/INT/HUP delivered to this wrapper can be
+# forwarded to the tracked timeout process group and fully reaped before this
+# wrapper returns to an installer holding the Cass lock.
+"$timeout_bin" --signal=TERM --kill-after=5s "${timeout_seconds}s" "$@" &
+active_timeout_pid=$!
+for _ in {1..20}; do
+    active_timeout_pgid=$(
+        /bin/ps -o pgid= -p "$active_timeout_pid" 2>/dev/null | tr -d ' '
+    ) || active_timeout_pgid=
+    [ "$active_timeout_pgid" = "$active_timeout_pid" ] && break
+    kill -0 "$active_timeout_pid" 2>/dev/null || break
+    sleep 0.01
+done
+if wait "$active_timeout_pid"; then
+    status=0
+else
+    status=$?
+fi
+active_timeout_pid=
+active_timeout_pgid=
+
+case "$status" in
+    124|137)
+        printf 'Agentchats installer: %s timed out after %s seconds.\n' \
+            "$description" "$timeout_seconds" >&2
+        exit 124
+        ;;
+    *)
+        exit "$status"
+        ;;
+esac

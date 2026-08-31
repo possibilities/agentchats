@@ -46,6 +46,18 @@ synchronization path here.
 - The index prepares incrementally when healthy and rebuilds fully when
   missing, unhealthy, or after a failed incremental refresh. Freshness
   between installs is the skill's job (`cass triage`), not a daemon's.
+- The installer persistently excludes retired connectors through cass's own
+  archive contract before their source stores disappear, then forces a rebuild
+  from active connectors before the Cass 0.6.25/schema-v20 helper may delete
+  its one proven zero-reference orphan. Every Cass command runs from the fixed
+  default HOME/data/config/Claude/Codex boundary with retirement-critical env
+  and dotenv discovery removed. The v20 proof closes the complete set of
+  agent/conversation/message reference columns, including its no-FK lookup
+  caches, before direct SQL. Raw-mirror cleanup is narrower: scan every
+  manifest, prove exact local provenance and an unshared content-addressed
+  blob, then unlink only those manifest/blob files. Any malformed, symlinked,
+  hard-linked, foreign, shared, or changing state is a refusal, never a
+  best-effort cleanup.
 - `skills/chats/SKILL.md` documents the CLI as installed, grounded in real
   command output. After a cass upgrade changes behavior, reverify the
   skill's claims against the live CLI (`cass triage --json`,
