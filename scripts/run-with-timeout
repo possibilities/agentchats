@@ -5,7 +5,7 @@ set -u
 active_timeout_pid=
 active_timeout_pgid=
 
-# shellcheck disable=SC2329 # called through the signal-trap handler
+# shellcheck disable=SC2317,SC2329 # called through the signal-trap handler
 reap_timeout_tree() {
     local signal=$1 killer_pid
 
@@ -28,13 +28,21 @@ reap_timeout_tree() {
     ) &
     killer_pid=$!
     wait "$active_timeout_pid" 2>/dev/null || true
-    kill "$killer_pid" 2>/dev/null || true
+
+    # timeout can exit before a signal-aware descendant has actually left the
+    # group (SIGINT is especially prone to this while Bash is waiting on a
+    # child). Keep the failsafe alive whenever that group still exists so the
+    # wrapper never returns while a timed descendant can retain resources.
+    if [ "$active_timeout_pgid" != "$active_timeout_pid" ] ||
+        ! kill -0 -- "-$active_timeout_pgid" 2>/dev/null; then
+        kill "$killer_pid" 2>/dev/null || true
+    fi
     wait "$killer_pid" 2>/dev/null || true
     active_timeout_pid=
     active_timeout_pgid=
 }
 
-# shellcheck disable=SC2329 # invoked by TERM/INT/HUP traps below
+# shellcheck disable=SC2317,SC2329 # invoked by TERM/INT/HUP traps below
 terminate_runner() {
     local signal=$1 status=$2
 
@@ -82,22 +90,17 @@ fi
 if [ -z "$timeout_bin" ] && command -v gtimeout >/dev/null 2>&1; then
     timeout_bin=$(command -v gtimeout)
 fi
-[ -n "$timeout_bin" ] && [ -x "$timeout_bin" ] || {
+if [ -z "$timeout_bin" ] || [ ! -x "$timeout_bin" ]; then
     printf 'run-with-timeout: GNU timeout is required\n' >&2
     exit 69
-}
-
-# The installer alone owns Cass's writer lock. Close its inherited descriptor
-# in this wrapper before any timed process exists; neither timeout nor any
-# descendant can extend the lock lifetime after the installer has reaped us.
-{ exec 9>&-; } 2>/dev/null || true
+fi
 
 workdir=${AGENTCHATS_TIMEOUT_WORKDIR:-}
 if [ -n "$workdir" ]; then
-    [ "${workdir#/}" != "$workdir" ] && [ -d "$workdir" ] && [ ! -L "$workdir" ] || {
+    if [[ "$workdir" != /* ]] || [ ! -d "$workdir" ] || [ -L "$workdir" ]; then
         printf 'run-with-timeout: unsafe working directory: %s\n' "$workdir" >&2
         exit 64
-    }
+    fi
     cd "$workdir" || exit 69
 fi
 

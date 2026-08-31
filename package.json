@@ -10,7 +10,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "test": "bun test && node --test test/run-with-timeout.node.mjs test/retire-pi-raw-mirror.node.mjs test/delete-retired-pi-cass-orphan.node.mjs",
+    "test": "bun test && node --test test/run-with-timeout.node.mjs",
     "typecheck": "bunx tsc --noEmit"
   },
   "dependencies": {

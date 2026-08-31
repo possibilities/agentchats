@@ -7,7 +7,6 @@ import { join } from "node:path";
 import { afterEach, test } from "node:test";
 
 const runner = new URL("../scripts/run-with-timeout", import.meta.url).pathname;
-const flock = existsSync("/opt/homebrew/bin/flock") ? "/opt/homebrew/bin/flock" : "/usr/bin/flock";
 const roots = [];
 
 afterEach(() => {
@@ -46,24 +45,6 @@ test("a successful captured command returns immediately", () => {
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stdout, "ready");
   assert.ok(elapsed < 1000, `successful command waited ${elapsed}ms`);
-});
-
-test("an inherited Cass writer-lock descriptor is closed in the command", () => {
-  const root = mkdtempSync(join(tmpdir(), "agentchats-timeout-fd-"));
-  roots.push(root);
-  const lockPath = join(root, "index-run.lock");
-  const result = spawnSync(
-    "/bin/bash",
-    [
-      "-c",
-      'exec 9>"$1"; "$2" 3 "fd closure" /bin/bash -c \'if { true >&9; } 2>/dev/null; then exit 42; fi\'',
-      "agentchats-timeout-fd",
-      lockPath,
-      runner,
-    ],
-    { encoding: "utf8" },
-  );
-  assert.equal(result.status, 0, result.stderr || result.stdout);
 });
 
 test("a timed command is reaped and cannot keep writing", async () => {
@@ -121,14 +102,13 @@ while :; do sleep 1; done
   });
 }
 
-test("an installer-like parent reaps the Cass group before releasing fd 9", async () => {
+test("an installer-like parent reaps the entire timed command group", async () => {
   const root = mkdtempSync(join(tmpdir(), "agentchats-timeout-parent-"));
   roots.push(root);
   const childScript = join(root, "cass-like.sh");
   const harness = join(root, "installer-like.sh");
   const childPidPath = join(root, "child.pid");
   const grandchildPidPath = join(root, "grandchild.pid");
-  const lockPath = join(root, "index-run.lock");
   writeFileSync(
     childScript,
     `#!/bin/bash
@@ -149,19 +129,15 @@ runner=$1
 child_script=$2
 child_pid_path=$3
 grandchild_pid_path=$4
-lock_path=$5
-flock_bin=$6
 active=
-exec 9>>"$lock_path"
-"$flock_bin" -x 9
-trap 'trap - TERM INT HUP; kill -TERM "$active" 2>/dev/null || true; wait "$active" 2>/dev/null || true; "$flock_bin" -u 9; exec 9>&-; exit 143' TERM
+trap 'trap - TERM INT HUP; kill -TERM "$active" 2>/dev/null || true; wait "$active" 2>/dev/null || true; exit 143' TERM
 "$runner" 30 'installer-like Cass' "$child_script" "$child_pid_path" "$grandchild_pid_path" &
 active=$!
 wait "$active"
 `,
     { mode: 0o700 },
   );
-  const parent = spawn(harness, [runner, childScript, childPidPath, grandchildPidPath, lockPath, flock], {
+  const parent = spawn(harness, [runner, childScript, childPidPath, grandchildPidPath], {
     stdio: ["ignore", "pipe", "pipe"],
   });
   await Promise.all([waitForFile(childPidPath), waitForFile(grandchildPidPath)]);
@@ -172,11 +148,4 @@ wait "$active"
   assert.equal(exitSignal, null);
   assert.equal(status, 143);
   await Promise.all([waitForProcessExit(childPid), waitForProcessExit(grandchildPid)]);
-
-  const lockProbe = spawnSync(
-    "/bin/bash",
-    ["-c", 'exec 8>>"$1"; "$2" -n -x 8', "lock-probe", lockPath, flock],
-    { encoding: "utf8" },
-  );
-  assert.equal(lockProbe.status, 0, lockProbe.stderr || lockProbe.stdout);
 });

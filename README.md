@@ -14,9 +14,7 @@ Three pieces do that:
   history across 23 agents. `scripts/install.sh --install` installs the
   upstream checksummed release into `~/.local/bin`, builds or refreshes the
   index, and verifies that the Claude Code and Codex session stores are
-  covered. Convergence also persistently excludes retired connectors, purges
-  their canonical archive rows through cass, removes only ownership-proven raw
-  captures, and proves the retired archive/search/raw surfaces are empty.
+  covered.
 - **The `agentchats` CLI.** `bin/agentchats`, linked editable into
   `~/.local/bin` by the installer. `agentchats state` prints a budget-capped
   bearings dump for agents re-orienting in a project; `agentchats search` is
@@ -41,7 +39,6 @@ Directly, from this checkout:
 ```sh
 scripts/install.sh --install   # install/upgrade cass, prepare the index
 scripts/install.sh --check     # print the plan without changing anything
-scripts/install.sh --retirement-proof  # emit the atomic zero-state JSON receipt
 ~/code/agentstart/scripts/sync-skills   # refresh the common capability pack
 ```
 
@@ -50,11 +47,9 @@ is quarantined for a reproduced installation failure. Cass `v0.6.26` is held
 at `v0.6.25` because its lexical rebuild can deadlock before the upstream
 GH#413 fix; any later release is eligible automatically. Search and index
 subprocesses are time-bounded so a regression fails the install with a useful
-error instead of parking AgentStart indefinitely. The retirement receipt
-includes exact zero counts for Cass's canonical rows, dependent caches, and
-every v20 analytics table, the actual empty search `hits` array, raw-capture
-counts, complete retirement-reference schema closure, foreign-key and implicit
-reference proofs, and a final supported `sources.toml` re-read.
+error instead of parking AgentStart indefinitely. Installer-owned Cass commands
+also use the canonical HOME/config/data boundary after proving the data path is
+operator-owned and not group/world writable.
 
 ## The agentchats CLI
 
@@ -115,8 +110,7 @@ classified as auxiliary; unknown keys or malformed values fail visibly.
 
 ```
 scripts/install.sh     cass installation contract (AgentStart calls this)
-scripts/retire-pi-raw-mirror.mjs  fail-closed raw-capture retirement helper
-scripts/delete-retired-pi-cass-orphan.mjs  inode-pinned Cass 0.6.25 orphan cleanup
+scripts/run-with-timeout  bounded subprocess runner used by the installer
 bin/agentchats         the agentchats CLI (state + search), linked into ~/.local/bin
 skills/chats/SKILL.md  the chats skill (AgentStart's skill scan ships it)
 skills/chats/agents/   per-agent skill manifest (openai.yaml)
