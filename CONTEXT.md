@@ -10,8 +10,8 @@ teaches agents to wield cass. The skill is the guidance; cass is the tool.
 _Avoid_: cass skill, history skill.
 
 **session store** — an agent CLI's on-disk session history that cass
-indexes: `~/.claude/projects` (Claude Code), `~/.codex/sessions` (Codex),
-`~/.pi/agent/sessions` (Pi). _Avoid_: logs, transcripts directory.
+indexes: `~/.claude/projects` (Claude Code) and `~/.codex/sessions` (Codex).
+_Avoid_: logs, transcripts directory.
 
 **Full-harness session** — a top-level interactive harness session. A modern
 Codex rollout identifies it with `thread_source: "user"`; legacy rollouts with

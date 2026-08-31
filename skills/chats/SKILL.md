@@ -1,12 +1,12 @@
 ---
 name: chats
-description: Search every past coding-agent session on this machine with the cass CLI — Claude Code, Codex, Pi, Cursor, Gemini, and twenty more agents' histories in one index. Use when an error, bug, or decision feels previously seen; when the user references a past session, conversation, or chat ("we did this before", "find that session where…"); when resuming or reconstructing context for a workspace; when preparing a cited handoff of prior work to another agent; or before re-deriving anything a past session may already contain.
+description: Search every past coding-agent session on this machine with the cass CLI — Claude Code, Codex, Cursor, Gemini, and twenty more agents' histories in one index. Use when an error, bug, or decision feels previously seen; when the user references a past session, conversation, or chat ("we did this before", "find that session where…"); when resuming or reconstructing context for a workspace; when preparing a cited handoff of prior work to another agent; or before re-deriving anything a past session may already contain.
 ---
 
 # Chats — search past coding-agent sessions
 
 Every coding agent on this machine writes a session log. cass (coding agent
-session search) indexes all of them — Claude Code, Codex, Pi, and twenty
+session search) indexes all of them — Claude Code, Codex, and twenty
 more connectors — into one local, searchable archive. This skill is the
 runbook for wielding it. Past sessions are a first-class research source:
 before re-deriving a fix, re-debugging a familiar error, or asking the user
@@ -126,7 +126,7 @@ Terms AND by default. Case-insensitive.
 Filters compose with any query:
 
 - `--agent claude_code` — one agent's history only. Slugs are exact:
-  `claude_code`, `codex`, `pi_agent`, `gemini`, `cursor`, `aider`,
+  `claude_code`, `codex`, `gemini`, `cursor`, `aider`,
   `amp`, `cline`, `chatgpt`, `factory`, `copilot`, `copilot_cli`,
   … (`cass capabilities --json | jq .connectors` for all 23).
 - `--workspace /path` — one project. Use the workspace string exactly as
@@ -187,14 +187,14 @@ cass search "" --robot --workspace "$(pwd)" --days 7 --aggregate date,agent
 ```
 
 Then `cass resume <source_path> --shell` prints the native resume command
-for that session's harness — claude, codex, pi, or another — hand it to the
+for that session's harness — claude, codex, or another — hand it to the
 user rather than executing a nested agent yourself.
 
 **Cross-agent archaeology.** What did *any* agent conclude about X?
 
 ```bash
 cass search "database migration strategy" --robot --limit 8 --fields summary
-# then narrow: --agent codex, --agent claude_code, --agent pi_agent …
+# then narrow: --agent codex, --agent claude_code, --agent gemini …
 ```
 
 **File archaeology.** Which sessions touched this file? Filenames are
@@ -347,7 +347,7 @@ five-second re-sync.
   `No space left on device` (retryable after freeing space — the archive
   is never the casualty).
 - Session stores indexed here: `~/.claude/projects` (claude_code),
-  `~/.codex/sessions` (codex), `~/.pi/agent/sessions` (pi_agent), plus
+  `~/.codex/sessions` (codex), plus
   every other detected agent.
 - Harness-level defaults exist as env vars when you can't edit the
   command: `CASS_SEARCH_LIMIT`, `CASS_SEARCH_TIMEOUT_MS`,

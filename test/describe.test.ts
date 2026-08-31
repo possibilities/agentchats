@@ -26,13 +26,9 @@ describe("describeRequests", () => {
     const requests = describeRequests([
       row({ agent: "claude_code", path: "/a.jsonl" }),
       row({ agent: "cursor", path: "/b.jsonl" }),
-      row({ agent: "pi_agent", path: "/c.jsonl" }),
     ]);
     const lines = requests.trim().split("\n").map((line) => JSON.parse(line));
-    expect(lines).toEqual([
-      { harness: "claude", path: "/a.jsonl" },
-      { harness: "pi", path: "/c.jsonl" },
-    ]);
+    expect(lines).toEqual([{ harness: "claude", path: "/a.jsonl" }]);
   });
 
   test("nothing to ask is an empty string, not a blank line", () => {

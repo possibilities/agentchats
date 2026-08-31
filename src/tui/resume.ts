@@ -10,13 +10,12 @@
 import type { SessionRow } from "./cass.ts";
 
 /** The herdr agent kinds the fleet can resume, by cass connector name. */
-const RESUMABLE: Record<string, "claude" | "codex" | "pi"> = {
+const RESUMABLE: Record<string, "claude" | "codex"> = {
   claude_code: "claude",
   codex: "codex",
-  pi_agent: "pi",
 };
 
-export type ResumeKind = "claude" | "codex" | "pi";
+export type ResumeKind = "claude" | "codex";
 
 export interface ResumeTarget {
   kind: ResumeKind;
@@ -39,7 +38,6 @@ const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
  * The native session id, from the store layouts agentlaunch resumes from:
  *   claude  projects/<slug>/<id>.jsonl
  *   codex   sessions/.../rollout-<stamp>-<uuid>.jsonl[.zst]
- *   pi      sessions/<slug>/<stamp>_<id>.jsonl
  */
 export function deriveSessionId(kind: ResumeKind, sourcePath: string): string | null {
   const base = sourcePath.split("/").pop() ?? "";
@@ -54,11 +52,6 @@ export function deriveSessionId(kind: ResumeKind, sourcePath: string): string | 
         new RegExp(`^rollout-.+-(${UUID.source})\\.jsonl(\\.zst)?$`, "i"),
       );
       return match?.[1] ?? null;
-    }
-    case "pi": {
-      const match = base.match(/^.+_([A-Za-z0-9][A-Za-z0-9.-]*)\.jsonl$/);
-      const id = match?.[1];
-      return id !== undefined && SESSION_ID.test(id) ? id : null;
     }
   }
 }
@@ -75,7 +68,7 @@ export function resumeTarget(row: SessionRow, probes: ResumeProbes): ResumeOutco
   if (kind === null) {
     return {
       ok: false,
-      reason: `${row.agent} sessions cannot be resumed on the surface — only claude, codex, and pi can`,
+      reason: `${row.agent} sessions cannot be resumed on the surface — only claude and codex can`,
     };
   }
   const sessionId = deriveSessionId(kind, row.path);

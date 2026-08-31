@@ -3,7 +3,7 @@
 set -euo pipefail
 
 # Agentchats installer: installs cass (coding_agent_session_search) and
-# prepares its index so Claude Code, Codex, and Pi sessions are searchable.
+# prepares its index so Claude Code and Codex sessions are searchable.
 #
 # AgentStart invokes this from scripts/install-agent-clis with --install. The
 # script is fix-forward and safe to rerun: the binary converges on the latest
@@ -165,7 +165,7 @@ cass (coding agent session search):
   cass index          # incremental when serving; cass index --full otherwise
                       # yields to any rebuild another process has in flight
   cass search "" --robot --limit 1   # the gate: search must serve after indexing
-  report indexed conversations for the claude_code, codex, and pi session stores
+  report indexed conversations for the claude_code and codex session stores
 EOF
         exit 0
         ;;
@@ -268,7 +268,6 @@ while IFS='|' read -r agent store; do
 done <<'EOF'
 claude_code|~/.claude/projects
 codex|~/.codex/sessions
-pi_agent|~/.pi/agent/sessions
 EOF
 
 [ "$coverage_gap" -eq 0 ] \

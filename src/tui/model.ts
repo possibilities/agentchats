@@ -134,7 +134,6 @@ function basename(path: string): string {
 /** cass connector names, in the operator's vocabulary. */
 export function agentLabel(agent: string): string {
   if (agent === "claude_code") return "claude";
-  if (agent === "pi_agent") return "pi";
   return agent;
 }
 
@@ -201,7 +200,7 @@ export function buildResultRows(
     spans.push({ text: `${when}  `, token: isSelected ? "text" : "muted" });
     spans.push({
       text: `${agentLabel(row.agent).padEnd(agentWidth)}  `,
-      token: row.agent === "claude_code" || row.agent === "codex" || row.agent === "pi_agent"
+      token: row.agent === "claude_code" || row.agent === "codex"
         ? "remote"
         : "faint",
     });

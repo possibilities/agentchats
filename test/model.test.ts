@@ -125,10 +125,10 @@ describe("buildResultRows", () => {
   });
 
   test("shows date, agent in operator vocabulary, project, and title", () => {
-    const text = textRows(stateWith([sessionRow(0, { agent: "pi_agent" })])).join("\n");
+    const text = textRows(stateWith([sessionRow(0, { agent: "claude_code" })])).join("\n");
     expect(text).toContain("2026-08-12 02:54");
-    expect(text).toContain("pi");
-    expect(text).not.toContain("pi_agent");
+    expect(text).toContain("claude");
+    expect(text).not.toContain("claude_code");
     expect(text).toContain("alpha");
     expect(text).toContain("session 0");
   });

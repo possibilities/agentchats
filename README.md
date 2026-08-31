@@ -3,8 +3,8 @@
 [![CI](https://github.com/possibilities/agentchats/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/possibilities/agentchats/actions/workflows/ci.yml)
 
 Every coding agent on this machine leaves a session history — Claude Code
-under `~/.claude/projects`, Codex under `~/.codex/sessions`, Pi under
-`~/.pi/agent/sessions`. Agentchats turns that scattered history into a
+under `~/.claude/projects` and Codex under `~/.codex/sessions`.
+Agentchats turns that scattered history into a
 searchable archive, and teaches agents to use it.
 
 Three pieces do that:
@@ -13,7 +13,7 @@ Three pieces do that:
   search) is the CLI and TUI that indexes and searches local coding-agent
   history across 23 agents. `scripts/install.sh --install` installs the
   upstream checksummed release into `~/.local/bin`, builds or refreshes the
-  index, and verifies that the Claude Code, Codex, and Pi session stores are
+  index, and verifies that the Claude Code and Codex session stores are
   covered.
 - **The `agentchats` CLI.** `bin/agentchats`, linked editable into
   `~/.local/bin` by the installer. `agentchats state` prints a budget-capped
@@ -32,7 +32,7 @@ Three pieces do that:
 AgentStart owns installation. A full `~/code/agentstart/scripts/install.sh
 --install` runs the cass installer, and its per-checkout skill scan
 (`scripts/sync-skills`) ships `skills/chats/` through the default `common` pack
-for Codex, Claude Code, and Pi.
+for Codex and Claude Code.
 
 Directly, from this checkout:
 
