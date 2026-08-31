@@ -8,6 +8,7 @@ import {
   mkdirSync,
   mkdtempSync,
   openSync,
+  readFileSync,
   realpathSync,
   renameSync,
   rmSync,
@@ -68,7 +69,8 @@ function runSqlite(database, sql) {
   return result.stdout.trim();
 }
 
-function writeValidatedRetiredManifest(fixture, conversationId) {
+function writeValidatedRetiredManifest(fixture, conversationIds) {
+  const normalizedIds = Array.isArray(conversationIds) ? conversationIds : [conversationIds];
   const root = expectedRawMirrorRoot(fixture.home);
   const manifests = join(root, "manifests");
   const blobRoot = join(root, "blobs", "blake3");
@@ -104,13 +106,34 @@ function writeValidatedRetiredManifest(fixture, conversationId) {
     source_size_bytes: 1,
     compression: { state: "none", algorithm: null, uncompressed_size_bytes: 1 },
     encryption: { state: "none", algorithm: null, key_id: null, envelope_version: null },
-    db_links: [{ conversation_id: conversationId, message_count: 1, source_path: originalPath, started_at_ms: 1 }],
+    db_links: normalizedIds.map((conversationId) => ({
+      conversation_id: conversationId,
+      message_count: 1,
+      source_path: originalPath,
+      started_at_ms: 1,
+    })),
     verification: { status: "captured", verifier: "cass_indexer", content_blake3: blobHash, verified_at_ms: 1 },
     manifest_blake3: `doctor-raw-mirror-manifest-v1-${"d".repeat(64)}`,
   };
   const manifestPath = join(manifests, `${manifestId}.json`);
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600 });
   chmodSync(manifestPath, 0o600);
+  return manifestPath;
+}
+
+function runInstallerAssertionHarness(home, body) {
+  const installerPath = new URL("../scripts/install.sh", import.meta.url).pathname;
+  const source = readFileSync(installerPath, "utf8");
+  const marker = "\ntrap release_cass_writer_lock_on_exit EXIT\n";
+  const markerIndex = source.indexOf(marker);
+  assert.notEqual(markerIndex, -1, "installer function boundary must remain discoverable");
+  const harnessPath = join(home, "install-retirement-assertions.bash");
+  writeFileSync(harnessPath, `${source.slice(0, markerIndex)}\n${body}\n`, { mode: 0o700 });
+  chmodSync(harnessPath, 0o700);
+  return spawnSync("/bin/bash", [harnessPath], {
+    encoding: "utf8",
+    env: { ...process.env, HOME: home },
+  });
 }
 
 function archiveSchema() {
@@ -482,6 +505,71 @@ test("cleanup removes only an explicitly proven retired tail-cache row", async (
   assert.equal(runSqlite(fixture.database, "SELECT COUNT(*) FROM conversation_tail_state;"), "0");
 });
 
+test("cleanup removes the exact twelve live raw-proven orphan tail rows and preserves provenance", async () => {
+  const fixture = fixtureHome();
+  const retiredIds = [1, 2, 3, 4, 5, 6, 1727, 1728, 2107, 2108, 2109, 2125];
+  createArchive(fixture.database);
+  runSqlite(
+    fixture.database,
+    `DELETE FROM agents WHERE slug = 'pi_agent';
+     INSERT INTO agents(slug, name, kind, created_at, updated_at)
+       VALUES ('codex', 'Codex', 'local', 0, 0), ('claude_code', 'Claude', 'local', 0, 0);
+     INSERT INTO conversation_tail_state(conversation_id)
+       VALUES ${retiredIds.map((id) => `(${id})`).join(",")};`,
+  );
+  const manifestPath = writeValidatedRetiredManifest(fixture, retiredIds);
+  assert.deepEqual(retiredConversationIds({ home: fixture.home }), retiredIds);
+
+  assert.deepEqual(
+    await authorizedDelete(fixture, { mode: "cleanup" }),
+    expectedReceipt(0),
+  );
+  assert.equal(runSqlite(fixture.database, "SELECT COUNT(*) FROM conversation_tail_state;"), "0");
+  assert.equal(existsSync(manifestPath), true, "archive cleanup must not consume raw provenance");
+});
+
+test("cleanup rolls back every raw-proven tail deletion when one unrelated orphan remains", async () => {
+  const fixture = fixtureHome();
+  const retiredIds = [1, 2, 3, 4, 5, 6, 1727, 1728, 2107, 2108, 2109, 2125];
+  const unrelatedId = 9999;
+  createArchive(fixture.database);
+  runSqlite(
+    fixture.database,
+    `DELETE FROM agents WHERE slug = 'pi_agent';
+     INSERT INTO conversation_tail_state(conversation_id)
+       VALUES ${[...retiredIds, unrelatedId].map((id) => `(${id})`).join(",")};`,
+  );
+  const manifestPath = writeValidatedRetiredManifest(fixture, retiredIds);
+
+  await assert.rejects(
+    authorizedDelete(fixture, { mode: "cleanup" }),
+    /conversation_tail_state_inconsistencies=1/,
+  );
+  assert.equal(
+    runSqlite(fixture.database, "SELECT COUNT(*) FROM conversation_tail_state;"),
+    String(retiredIds.length + 1),
+  );
+  assert.equal(existsSync(manifestPath), true);
+});
+
+test("installer retry gate cleans before inspect only for the proved resumable state", () => {
+  const fixture = fixtureHome();
+  const tracePath = join(fixture.home, "retry-cleanup-trace");
+  const result = runInstallerAssertionHarness(
+    fixture.home,
+    `
+TRACE_PATH="$HOME/retry-cleanup-trace"
+assert_no_semantic_runtime_retirement_state_locked() { printf 'runtime-proof\\n' >>"$TRACE_PATH"; }
+cleanup_cass_0625_orphan_agent_locked() { printf 'cleanup\\n' >>"$TRACE_PATH"; }
+cass_archive_helper_locked() { printf '%s\\n' "$1" >>"$TRACE_PATH"; printf '{"mode":"%s"}\\n' "$1"; }
+inspect_cass_archive_after_retry_cleanup_locked 1 1 0 12 0 1 >/dev/null
+inspect_cass_archive_after_retry_cleanup_locked 0 1 12 12 0 0 >/dev/null
+`,
+  );
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.equal(readFileSync(tracePath, "utf8"), "runtime-proof\ncleanup\ninspect\ninspect\n");
+});
+
 test("a mismatched external lookup key is refused before orphan deletion", async () => {
   const fixture = fixtureHome();
   createArchive(fixture.database);
@@ -765,7 +853,7 @@ test(
     // bug leaves its deterministic conversation id in the no-FK tail cache.
     // Prove that id through the validated raw-mirror manifest; production
     // cleanup must never trust a SELECT over conversation_tail_state itself.
-    writeValidatedRetiredManifest(fixture, 1);
+    const retirementManifestPath = writeValidatedRetiredManifest(fixture, 1);
     assert.deepEqual(retiredConversationIds({ home: fixture.home }), [1]);
     assert.deepEqual(
       await authorizedDelete(fixture, {
@@ -773,6 +861,11 @@ test(
         mode: "cleanup",
       }),
       expectedReceipt(orphanBeforeCleanup),
+    );
+    assert.equal(
+      existsSync(retirementManifestPath),
+      true,
+      "the integration helper must consume provenance without deleting it",
     );
     assert.equal(retiredRows(fixture.database), 0);
     assert.equal(runSqlite(fixture.database, "PRAGMA integrity_check;"), "ok");

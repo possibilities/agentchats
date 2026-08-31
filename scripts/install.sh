@@ -457,8 +457,8 @@ terminate_installer() {
 # has its own resumable publisher. Refuse before the first archive mutation
 # unless every semantic surface is proved absent, and reprove the same facts
 # before clearing the durable retry receipt.
-assert_no_semantic_retirement_state_locked() {
-    local archive_receipt component database_present=0 status
+assert_no_semantic_runtime_retirement_state_locked() {
+    local component status
 
     assert_cass_writer_lock
     for component in vector_index semantic semantic-cache; do
@@ -466,10 +466,6 @@ assert_no_semantic_retirement_state_locked() {
             die "refusing retired-connector mutation while Cass semantic state exists: $cass_data_dir/$component"
         fi
     done
-
-    if assert_cass_database_path; then
-        database_present=1
-    fi
 
     assert_cass_data_directory
     status=$(
@@ -489,6 +485,17 @@ assert_no_semantic_retirement_state_locked() {
             and .daemon_runtime.observation.socket_connectable == false
         ' >/dev/null \
         || die "semantic tiers, backlog, checkpoint, daemon, or rebuild state could retain retired connector data"
+
+    assert_cass_writer_lock
+}
+
+assert_no_semantic_retirement_state_locked() {
+    local archive_receipt database_present=0
+
+    assert_no_semantic_runtime_retirement_state_locked
+    if assert_cass_database_path; then
+        database_present=1
+    fi
 
     if [ "$database_present" -eq 1 ]; then
         archive_receipt=$(cass_archive_helper_locked inspect) \
@@ -562,6 +569,40 @@ cleanup_cass_0625_orphan_agent_locked() {
             and .referential_inconsistencies == 0
         ' >/dev/null \
         || die "Cass 0.6.25 cleanup receipt retained retired archive state"
+}
+
+# A prior retirement run can have completed Cass's supported exclusion and
+# stopped before removing the raw captures. In that exact retry state the
+# archive can contain only Cass v20's no-FK tail rows: inspect must not run
+# first, because it correctly refuses those inconsistencies. Let cleanup read
+# the deletion ids from the still-live, fully validated raw manifests, remove
+# only rows whose canonical conversation is already absent, and then make the
+# ordinary inspect gate prove every unrelated surface. Fresh retirement runs
+# skip this path and retain the normal inspect-before-exclusion boundary.
+inspect_cass_archive_after_retry_cleanup_locked() {
+    local connector_excluded=$1 stats_known=$2 indexed_count=$3
+    local manifest_count=$4 raw_transaction_pending=$5 rebuild_receipt_pending=$6
+
+    case "$connector_excluded:$stats_known:$raw_transaction_pending:$rebuild_receipt_pending" in
+        [01]:[01]:[01]:[01]) ;;
+        *) die "invalid retry-cleanup state" ;;
+    esac
+    case "$indexed_count:$manifest_count" in
+        *[!0-9:]*|:*|*:) die "invalid retry-cleanup count" ;;
+    esac
+
+    if [ "$connector_excluded" -eq 1 ] \
+        && [ "$stats_known" -eq 1 ] \
+        && [ "$indexed_count" -eq 0 ] \
+        && [ "$manifest_count" -gt 0 ] \
+        && [ "$raw_transaction_pending" -eq 0 ] \
+        && [ "$rebuild_receipt_pending" -eq 1 ]; then
+        printf 'Completing raw-proven Cass archive cleanup before retry inspection.\n' >&2
+        assert_no_semantic_runtime_retirement_state_locked
+        cleanup_cass_0625_orphan_agent_locked
+    fi
+
+    cass_archive_helper_locked inspect
 }
 
 assert_cass_archive_retirement_locked() {
@@ -907,10 +948,30 @@ if ! locked_pi_indexed_count=$(
     locked_pi_indexed_count=0
     locked_pi_stats_known=0
 fi
+locked_raw_retirement_plan=$(run_sanitized_command node "$raw_mirror_retirement_script" --dry-run) \
+    || die "could not reprove raw-mirror retirement targets while holding the writer lock"
+locked_raw_retirement_manifest_count=$(
+    printf '%s\n' "$locked_raw_retirement_plan" \
+        | /usr/bin/jq -er '.manifest_count | select(type == "number" and floor == . and . >= 0)'
+) || die "locked raw-mirror retirement plan returned an invalid manifest count"
+locked_raw_retirement_pending=$(
+    printf '%s\n' "$locked_raw_retirement_plan" \
+        | /usr/bin/jq -er '.pending_transaction | if . == true then 1 elif . == false then 0 else error("invalid pending flag") end'
+) || die "locked raw-mirror retirement plan returned an invalid pending flag"
+locked_retirement_receipt_pending=$(retirement_receipt_pending) \
+    || die "could not reprove the retired connector rebuild receipt while holding the writer lock"
+
 locked_archive_target_count=0
 if assert_cass_database_path; then
-    locked_archive_receipt=$(cass_archive_helper_locked inspect) \
-        || die "could not inspect Cass's exact archive while holding the writer lock"
+    locked_archive_receipt=$(
+        inspect_cass_archive_after_retry_cleanup_locked \
+            "$locked_pi_already_excluded" \
+            "$locked_pi_stats_known" \
+            "$locked_pi_indexed_count" \
+            "$locked_raw_retirement_manifest_count" \
+            "$locked_raw_retirement_pending" \
+            "$locked_retirement_receipt_pending"
+    ) || die "could not inspect Cass's exact archive while holding the writer lock"
     locked_archive_target_count=$(
         printf '%s\n' "$locked_archive_receipt" \
             | /usr/bin/jq -er '[
@@ -926,19 +987,6 @@ if assert_cass_database_path; then
             ] | add'
     ) || die "Cass archive inspection returned invalid retirement counts"
 fi
-
-locked_raw_retirement_plan=$(run_sanitized_command node "$raw_mirror_retirement_script" --dry-run) \
-    || die "could not reprove raw-mirror retirement targets while holding the writer lock"
-locked_raw_retirement_manifest_count=$(
-    printf '%s\n' "$locked_raw_retirement_plan" \
-        | /usr/bin/jq -er '.manifest_count | select(type == "number" and floor == . and . >= 0)'
-) || die "locked raw-mirror retirement plan returned an invalid manifest count"
-locked_raw_retirement_pending=$(
-    printf '%s\n' "$locked_raw_retirement_plan" \
-        | /usr/bin/jq -er '.pending_transaction | if . == true then 1 elif . == false then 0 else error("invalid pending flag") end'
-) || die "locked raw-mirror retirement plan returned an invalid pending flag"
-locked_retirement_receipt_pending=$(retirement_receipt_pending) \
-    || die "could not reprove the retired connector rebuild receipt while holding the writer lock"
 
 if [ "$pi_retirement_state" -eq 1 ] \
     || [ "$locked_raw_retirement_manifest_count" -gt 0 ] \
@@ -966,6 +1014,14 @@ else
     printf 'The retired cass connector is already excluded with no archive rows.\n'
 fi
 assert_cass_writer_lock
+# Cass 0.6.25 purges canonical Pi conversations and rebuilds analytics, but it
+# does not delete conversation_tail_state. The raw manifests are deliberately
+# still live here, so cleanup can authenticate those ids before the semantic
+# inspector rejects any remaining, unrelated inconsistency.
+if assert_cass_database_path; then
+    assert_no_semantic_runtime_retirement_state_locked
+    cleanup_cass_0625_orphan_agent_locked
+fi
 assert_no_semantic_retirement_state_locked
 
 # Keep the raw-mirror manifests in place until the post-rebuild archive helper
@@ -1001,8 +1057,9 @@ wait_for_index_turn
 # first cleanup ran. Apply the same ownership proof once more after indexing,
 # then require all three Cass surfaces to be empty for the retired connector.
 acquire_cass_writer_lock
-assert_no_semantic_retirement_state_locked
+assert_no_semantic_runtime_retirement_state_locked
 cleanup_cass_0625_orphan_agent_locked
+assert_no_semantic_retirement_state_locked
 assert_cass_writer_lock
 printf 'Removing ownership-proven retired raw-mirror captures.\n'
 apply_raw_mirror_retirement_locked
