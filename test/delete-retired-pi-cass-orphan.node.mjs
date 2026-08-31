@@ -528,6 +528,44 @@ test("cleanup removes the exact twelve live raw-proven orphan tail rows and pres
   assert.equal(existsSync(manifestPath), true, "archive cleanup must not consume raw provenance");
 });
 
+test("cleanup removes stale Pi daily rollups only after canonical Pi rows are gone", async () => {
+  const fixture = fixtureHome();
+  createArchive(fixture.database);
+  runSqlite(
+    fixture.database,
+    `INSERT INTO agents(slug, name, kind, created_at, updated_at)
+       VALUES ('claude_code', 'Claude', 'local', 0, 0);
+     INSERT INTO daily_stats(day_id, agent_slug, source_id, last_updated)
+       VALUES (1, 'pi_agent', 'all', 0), (1, 'pi_agent', 'local', 0),
+              (1, 'claude_code', 'all', 0);`,
+  );
+
+  assert.deepEqual(
+    await authorizedDelete(fixture, { mode: "cleanup" }),
+    expectedReceipt(1),
+  );
+  assert.equal(runSqlite(fixture.database, "SELECT COUNT(*) FROM daily_stats WHERE agent_slug = 'pi_agent';"), "0");
+  assert.equal(runSqlite(fixture.database, "SELECT COUNT(*) FROM daily_stats WHERE agent_slug = 'claude_code';"), "1");
+});
+
+test("cleanup refuses Pi daily rollups while a canonical Pi conversation remains", async () => {
+  const fixture = fixtureHome();
+  createArchive(fixture.database);
+  runSqlite(
+    fixture.database,
+    `INSERT INTO conversations(agent_id, source_path)
+       SELECT id, '/pi' FROM agents WHERE slug = 'pi_agent';
+     INSERT INTO daily_stats(day_id, agent_slug, last_updated)
+       VALUES (1, 'pi_agent', 0);`,
+  );
+
+  await assert.rejects(
+    authorizedDelete(fixture, { mode: "cleanup" }),
+    /conversations rows/,
+  );
+  assert.equal(runSqlite(fixture.database, "SELECT COUNT(*) FROM daily_stats WHERE agent_slug = 'pi_agent';"), "1");
+});
+
 test("cleanup rolls back every raw-proven tail deletion when one unrelated orphan remains", async () => {
   const fixture = fixtureHome();
   const retiredIds = [1, 2, 3, 4, 5, 6, 1727, 1728, 2107, 2108, 2109, 2125];

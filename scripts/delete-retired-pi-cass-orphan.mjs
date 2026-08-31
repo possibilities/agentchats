@@ -562,6 +562,13 @@ function retiredTailCleanupSql(ids) {
   ].join("\n");
 }
 
+function retiredDailyStatsCleanupSql() {
+  return [
+    "DELETE FROM daily_stats WHERE agent_slug = 'pi_agent';",
+    "SELECT changes();",
+  ].join("\n");
+}
+
 function retirementCountSql() {
   return [
     "SELECT COUNT(*) FROM agents WHERE slug = 'pi_agent';",
@@ -609,7 +616,7 @@ function parseRetirementCounts(lines, description) {
 
 function requireRetirementReferencesEmpty(
   counts,
-  { allowAgent = false, allowRetiredTail = false } = {},
+  { allowAgent = false, allowRetiredTail = false, allowRetiredDailyStats = false } = {},
 ) {
   if ((!allowAgent && counts.agents !== 0) || (allowAgent && counts.agents > 1)) {
     refuse(`unexpected retired agent-row count: ${counts.agents}`);
@@ -621,7 +628,7 @@ function requireRetirementReferencesEmpty(
     "conversation_tail_state",
     "conversation_external_lookup",
     "conversation_external_tail_lookup",
-    "daily_stats",
+    ...(allowRetiredDailyStats ? [] : ["daily_stats"]),
     "token_daily_stats",
     "message_metrics",
     "usage_hourly",
@@ -752,6 +759,13 @@ export async function deleteCass0625OrphanAgent({
       );
     }
     const allowRetiredTail = mode === "cleanup" && tailInconsistencyPresent;
+    // Cass 0.6.25 can leave denormalized daily rollups for an excluded
+    // connector even after its canonical agent and conversations are gone.
+    // They are safe to remove only in the provenance-gated cleanup mode and
+    // only when no retired conversation remains. Other derived surfaces still
+    // fail closed below.
+    const allowRetiredDailyStats =
+      mode === "cleanup" && before.agents <= 1 && before.conversations === 0 && before.daily_stats > 0;
     if (mode === "inspect") {
       if (before.agents > 1) refuse(`unexpected retired agent-row count: ${before.agents}`);
       requireArchiveConsistency(before);
@@ -759,6 +773,7 @@ export async function deleteCass0625OrphanAgent({
       requireRetirementReferencesEmpty(before, {
         allowAgent: mode !== "proof",
         allowRetiredTail,
+        allowRetiredDailyStats,
       });
     }
 
@@ -792,6 +807,32 @@ export async function deleteCass0625OrphanAgent({
         stderr,
         stageTimeoutMs,
         "post-tail-cleanup retirement proof",
+      );
+      requireRetirementReferencesEmpty(before, {
+        allowAgent: mode !== "proof",
+        allowRetiredDailyStats,
+      });
+      expected = requireSameBundle(expected, resolvedHome, databasePath, {
+        allowNewSidecars: new Set([`${DATABASE_NAME}-journal`]),
+      });
+    }
+
+    if (allowRetiredDailyStats) {
+      const repaired = await runStage(
+        child,
+        iterator,
+        stderr,
+        retiredDailyStatsCleanupSql(),
+        stageTimeoutMs,
+      );
+      if (repaired.length !== 1) refuse("sqlite returned an unexpected retired daily-stats cleanup shape");
+      exactCount(repaired[0], "retired daily-stats cleanup");
+      before = await readRetirementCounts(
+        child,
+        iterator,
+        stderr,
+        stageTimeoutMs,
+        "post-daily-stats-cleanup retirement proof",
       );
       requireRetirementReferencesEmpty(before, { allowAgent: mode !== "proof" });
       expected = requireSameBundle(expected, resolvedHome, databasePath, {
