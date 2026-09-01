@@ -1,11 +1,5 @@
 import { existsSync, statSync } from "node:fs";
-import {
-  cachedSessionClassifier,
-  cassBinary,
-  classifySession,
-  loadVisibleRows,
-  spawnRunner,
-} from "./cass.ts";
+import { loadVisibleRows, openPickerIndex } from "./sessions.ts";
 import { loadAgentchatsConfig } from "./config.ts";
 import { applyDescriptions, fetchDescriptions } from "./describe.ts";
 import { assertHostedStdout, buildResumeDirective, directiveLine } from "./directive.ts";
@@ -32,12 +26,12 @@ import { resumeTarget } from "./resume.ts";
 import { GLYPHS, type Line, SIGNAL_ROOM } from "./theme.ts";
 
 /**
- * The picker shell: a query box over live cass results, rendering on stderr
+ * The picker shell: a query box over the session index, rendering on stderr
  * with stdout held by the surface host as the directive pipe. A committed
  * pick writes one resume directive and exits 0; a pick that cannot resume
  * faithfully exits 1 with the reason on stderr, where the host holds the
  * popup open. Everything decidable without a terminal lives in model.ts,
- * resume.ts, and cass.ts.
+ * resume.ts, and sessions.ts.
  */
 
 // Hits collapse to one row per session, so fetch deep enough that a chatty
@@ -104,10 +98,10 @@ export async function runSearch(
     );
     return 1;
   }
-  const binary = cassBinary(env);
-  if (binary === null) {
+  const db = openPickerIndex(env);
+  if (db === null) {
     process.stderr.write(
-      "agentchats search: cass is not installed; run ~/code/agentchats/scripts/install.sh --install\n",
+      "agentchats search: the session index is not built; run: agentchats index\n",
     );
     return 1;
   }
@@ -125,10 +119,7 @@ export async function runSearch(
   const home = env["HOME"] ?? "";
   const projectChoices = discoverProjectChoices(workspace, home);
   const state = createState(workspace, invocation.query, invocation.includeAuxiliary);
-  const runner = spawnRunner(binary);
-  const classifyForSearch = cachedSessionClassifier((row) =>
-    classifySession(row, config.auxiliaryCodexOriginators),
-  );
+  const auxiliaryOriginators = config.auxiliaryCodexOriginators;
 
   // @opentui/core is imported dynamically only — its platform-native package
   // top-level-awaits and races under parallel test isolation.
@@ -190,7 +181,7 @@ export async function runSearch(
   });
   // The query block: the accent focus rail beside OpenTUI's own textarea —
   // a real line editor. The rail doubles as the live-search signal: the
-  // busy glyph while a cass run is in flight.
+  // busy glyph while a query is in flight.
   const queryRow = new core.BoxRenderable(renderer, {
     id: "search-query-row",
     width: "100%",
@@ -359,7 +350,9 @@ export async function runSearch(
     shutdown(1);
   };
 
-  // Latest-wins: a slow cass answer for a stale query repaints nothing.
+  // Latest-wins: an answer for a stale query repaints nothing. The index
+  // answers in single-digit milliseconds, so this now guards against a
+  // keystroke landing mid-render rather than against a slow subprocess.
   let generation = 0;
   const refresh = (): void => {
     generation += 1;
@@ -370,33 +363,32 @@ export async function runSearch(
     paint();
     const scope = scopeWorkspace(state);
     const source = trimmed === "" ? "recent" : "search";
-    void loadVisibleRows(
-      runner,
+    const result = loadVisibleRows(
+      db,
       {
         query: trimmed,
         scope,
         window: state.window,
         limit: trimmed === "" ? RECENT_LIMIT : SEARCH_LIMIT,
         includeAuxiliary: state.includeAuxiliary,
-        shouldContinue: () => !closed && current === generation,
       },
-      classifyForSearch,
-    ).then((result) => {
-      if (closed || current !== generation) return;
-      if (!result.ok) {
-        applyError(state, result.error);
-      } else {
-        applyRows(state, source, result.rows);
-        // Enrichment arrives late and only improves rows already shown, so
-        // it rides behind the paint and honors the same generation.
-        void fetchDescriptions(state.rows, env).then((descriptions) => {
-          if (closed || current !== generation || descriptions.size === 0) return;
-          applyDescriptions(state.rows, descriptions);
-          paint();
-        });
-      }
-      paint();
-    });
+      auxiliaryOriginators,
+    );
+    if (closed || current !== generation) return;
+    if (!result.ok) {
+      applyError(state, result.error);
+    } else {
+      applyRows(state, source, result.rows);
+      // Enrichment shells out to agentsurface and so stays asynchronous: it
+      // only improves rows already shown, rides behind the paint, and honors
+      // the same generation.
+      void fetchDescriptions(state.rows, env).then((descriptions) => {
+        if (closed || current !== generation || descriptions.size === 0) return;
+        applyDescriptions(state.rows, descriptions);
+        paint();
+      });
+    }
+    paint();
   };
 
   const scheduleRefresh = (): void => {

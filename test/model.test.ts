@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { SessionRow } from "../src/tui/cass.ts";
+import type { SessionRow } from "../src/tui/sessions.ts";
 import {
   applyError,
   applyRows,
@@ -149,8 +149,8 @@ describe("buildResultRows", () => {
     expect(textRows(excerptOnly).join("")).toContain("just the prompt");
     expect(textRows(excerptOnly).join("")).not.toContain("command-message");
 
-    const bare = stateWith([sessionRow(0, { title: "raw cass title" })]);
-    expect(textRows(bare).join("")).toContain("raw cass title");
+    const bare = stateWith([sessionRow(0, { title: "raw indexed title" })]);
+    expect(textRows(bare).join("")).toContain("raw indexed title");
   });
 
   test("the window rides the scope label", () => {

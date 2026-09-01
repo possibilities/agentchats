@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { SessionRow } from "../src/tui/cass.ts";
+import type { SessionRow } from "../src/tui/sessions.ts";
 import { deriveSessionId, resumeKind, resumeTarget } from "../src/tui/resume.ts";
 
 const CLAUDE_PATH =
@@ -84,7 +84,7 @@ describe("resumeTarget", () => {
   test("a session file gone from the store is fatal and names the index", () => {
     const outcome = resumeTarget(row({}), { ...ALL_TRUE, fileExists: () => false });
     expect(outcome.ok).toBe(false);
-    if (!outcome.ok) expect(outcome.reason).toContain("cass index");
+    if (!outcome.ok) expect(outcome.reason).toContain("agentchats index");
   });
 
   test("a vanished workspace is fatal", () => {

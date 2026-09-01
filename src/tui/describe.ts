@@ -1,4 +1,4 @@
-import type { SessionRow } from "./cass.ts";
+import type { SessionRow } from "./sessions.ts";
 import { resumeKind } from "./resume.ts";
 
 /**
@@ -6,7 +6,7 @@ import { resumeKind } from "./resume.ts";
  * read-only naming surface: the stored slug (computed once by tab naming,
  * never here) and the first-prompt excerpt per transcript. One subprocess
  * per listing refresh. A machine without agentsurface, or a failing call,
- * enriches nothing: the rows keep cass's title, which is the fallback text
+ * enriches nothing: the rows keep the indexed title, which is the fallback text
  * anyway.
  */
 
@@ -47,7 +47,7 @@ export function parseDescriptions(stdout: string): Map<string, Description> {
   return byPath;
 }
 
-/** Merge in place; rows without an answer stay as cass described them. */
+/** Merge in place; rows without an answer keep their indexed text. */
 export function applyDescriptions(
   rows: SessionRow[],
   descriptions: Map<string, Description>,

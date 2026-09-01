@@ -1,6 +1,6 @@
 interface:
   display_name: "Chats"
-  short_description: "Search every past coding-agent session with cass"
+  short_description: "Search past Claude Code and Codex sessions with agentchats"
   default_prompt: "Use $chats to search past agent sessions for this."
 policy:
   allow_implicit_invocation: true

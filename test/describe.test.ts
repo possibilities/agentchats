@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { SessionRow } from "../src/tui/cass.ts";
+import type { SessionRow } from "../src/tui/sessions.ts";
 import {
   applyDescriptions,
   describeRequests,
@@ -37,7 +37,7 @@ describe("describeRequests", () => {
 });
 
 describe("parseDescriptions + applyDescriptions", () => {
-  test("answers merge by path; unanswered rows keep cass's text", () => {
+  test("answers merge by path; unanswered rows keep their indexed text", () => {
     const rows = [row({ path: "/a.jsonl" }), row({ path: "/b.jsonl" })];
     const descriptions = parseDescriptions(
       `${JSON.stringify({ path: "/a.jsonl", slug: "fix the queue", excerpt: "the queue drops" })}\nnot json\n`,

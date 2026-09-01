@@ -48,7 +48,7 @@ describe("queryRailGlyph", () => {
     expect(queryRailGlyph(false)).toBe(GLYPHS.rail);
   });
 
-  test("keeps the live-search signal while cass is running", () => {
+  test("keeps the live-search signal while a query is running", () => {
     expect(queryRailGlyph(true)).toBe(GLYPHS.busy);
   });
 });

@@ -7,9 +7,9 @@
  * screen. Nothing here degrades to "launch something similar".
  */
 
-import type { SessionRow } from "./cass.ts";
+import type { SessionRow } from "./sessions.ts";
 
-/** The herdr agent kinds the fleet can resume, by cass connector name. */
+/** The herdr agent kinds the fleet can resume, by indexed agent name. */
 const RESUMABLE: Record<string, "claude" | "codex"> = {
   claude_code: "claude",
   codex: "codex",
@@ -81,7 +81,7 @@ export function resumeTarget(row: SessionRow, probes: ResumeProbes): ResumeOutco
   if (!probes.fileExists(row.path)) {
     return {
       ok: false,
-      reason: `the session file is gone from the ${kind} store: ${row.path} (the cass index is stale; run cass index)`,
+      reason: `the session file is gone from the ${kind} store: ${row.path} (the index is stale; run: agentchats index)`,
     };
   }
   if (row.workspace === "" || !probes.directoryExists(row.workspace)) {

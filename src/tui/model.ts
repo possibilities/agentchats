@@ -1,10 +1,10 @@
-import type { SessionRow, TimeWindow } from "./cass.ts";
+import type { SessionRow, TimeWindow } from "./sessions.ts";
 import { GLYPHS, type Line, type Span } from "./theme.ts";
 
 /**
  * Everything the picker decides without a terminal: the state, the list
  * discipline, and the exact rows the shell paints. The shell owns only the
- * renderer, the debounce clock, and the cass subprocess.
+ * renderer, the debounce clock, and the index query.
  */
 
 export type Scope = "project" | "global";
@@ -23,7 +23,7 @@ export interface SearchState {
   rows: SessionRow[];
   selected: number;
   searching: boolean;
-  /** A failed cass run; cleared by the next completed one. */
+  /** A failed index query; cleared by the next completed one. */
   error: string | null;
 }
 
@@ -81,7 +81,7 @@ export function selectProject(state: SearchState, workspace: string): void {
   state.workspace = workspace;
   state.scope = "project";
   // A result from the previous workspace must never be resumable under the
-  // newly displayed scope while cass is answering the replacement search.
+  // newly displayed scope while the replacement search is being answered.
   state.rows = [];
   state.selected = 0;
 }
@@ -97,7 +97,7 @@ export function toggleAuxiliary(state: SearchState): void {
   state.includeAuxiliary = !state.includeAuxiliary;
 }
 
-/** The workspace argument for cass under the current scope. */
+/** The workspace filter for the index under the current scope. */
 export function scopeWorkspace(state: SearchState): string | null {
   return state.scope === "project" ? state.workspace : null;
 }
@@ -131,7 +131,7 @@ function basename(path: string): string {
   return parts[parts.length - 1] ?? path;
 }
 
-/** cass connector names, in the operator's vocabulary. */
+/** Indexed agent names, in the operator's vocabulary. */
 export function agentLabel(agent: string): string {
   if (agent === "claude_code") return "claude";
   return agent;
@@ -210,7 +210,7 @@ export function buildResultRows(
     spans.push({ text: `${project}  `, token: isSelected ? "text" : "muted" });
     // The row's subject: the fleet's slug when naming ever computed one,
     // brighter than the excerpt beside it; otherwise the first-prompt
-    // excerpt, and only as a last resort cass's raw title.
+    // excerpt, and only as a last resort the transcript's own title.
     let budget = Math.max(4, remaining - project.length - 2);
     if (row.slug !== null) {
       const slug = truncate(row.slug, Math.max(4, Math.min(36, budget)));

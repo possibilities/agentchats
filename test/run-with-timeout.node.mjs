@@ -105,7 +105,7 @@ while :; do sleep 1; done
 test("an installer-like parent reaps the entire timed command group", async () => {
   const root = mkdtempSync(join(tmpdir(), "agentchats-timeout-parent-"));
   roots.push(root);
-  const childScript = join(root, "cass-like.sh");
+  const childScript = join(root, "slow-child.sh");
   const harness = join(root, "installer-like.sh");
   const childPidPath = join(root, "child.pid");
   const grandchildPidPath = join(root, "grandchild.pid");
@@ -131,7 +131,7 @@ child_pid_path=$3
 grandchild_pid_path=$4
 active=
 trap 'trap - TERM INT HUP; kill -TERM "$active" 2>/dev/null || true; wait "$active" 2>/dev/null || true; exit 143' TERM
-"$runner" 30 'installer-like Cass' "$child_script" "$child_pid_path" "$grandchild_pid_path" &
+"$runner" 30 'installer-like child' "$child_script" "$child_pid_path" "$grandchild_pid_path" &
 active=$!
 wait "$active"
 `,

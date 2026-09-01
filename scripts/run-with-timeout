@@ -106,7 +106,7 @@ fi
 
 # Run timeout asynchronously so TERM/INT/HUP delivered to this wrapper can be
 # forwarded to the tracked timeout process group and fully reaped before this
-# wrapper returns to an installer holding the Cass lock.
+# wrapper returns to an installer holding the index lock.
 "$timeout_bin" --signal=TERM --kill-after=5s "${timeout_seconds}s" "$@" &
 active_timeout_pid=$!
 for _ in {1..20}; do
