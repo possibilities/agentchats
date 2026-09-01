@@ -19,6 +19,7 @@ import {
 import { parseClaude } from "../parse/claude.ts";
 import { parseCodex, readRollout } from "../parse/codex.ts";
 import { deriveSessionId, resumeKind } from "../tui/resume.ts";
+import { MESSAGE_BODY_CAP } from "../parse/types.ts";
 
 /** The two transcript stores, and the parser that reads each. Nothing else
  * is discovered: other agents' histories are out of scope by decision, not
@@ -323,6 +324,18 @@ interface MessageRow {
 const MESSAGE_COLUMNS = `s.source_path, s.agent, s.workspace, s.session_id,
   m.ordinal, m.line, m.role, m.ts, m.body`;
 
+/**
+ * A body stored at exactly the cap was cut, and until now nothing said so:
+ * `view` returned prose ending mid-word with no marker, and the rest is not
+ * recoverable through the CLI because the index is read, not the file. An
+ * agent quoting that as complete evidence is quoting half a tool's output.
+ * Inferred rather than stored, so no reindex is needed — a natural body of
+ * exactly MESSAGE_BODY_CAP characters is not a case worth a schema change.
+ */
+function wasTruncated(row: MessageRow): boolean {
+  return row.body.length >= MESSAGE_BODY_CAP;
+}
+
 function messageAt(db: Database, sourcePath: string, line: number): MessageRow {
   const row = db
     .query(
@@ -348,8 +361,16 @@ function commandView(argv: string[], env: Record<string, string | undefined>): n
   const db = open(env);
   try {
     const row = messageAt(db, sourcePath, integer(parsed, "line", 0));
-    if (parsed.flags.has("json")) emit(row);
-    else process.stdout.write(`${row.role} · ${row.ts}\n${row.body}\n`);
+    const truncated = wasTruncated(row);
+    if (parsed.flags.has("json")) emit({ ...row, truncated });
+    else {
+      process.stdout.write(`${row.role} · ${row.ts}\n${row.body}\n`);
+      if (truncated) {
+        process.stdout.write(
+          `\n[truncated at ${MESSAGE_BODY_CAP} characters; read ${sourcePath} line ${row.line} for the rest]\n`,
+        );
+      }
+    }
     return EXIT.ok;
   } finally {
     db.close();
@@ -371,8 +392,17 @@ function commandExpand(argv: string[], env: Record<string, string | undefined>):
          where s.source_path = ? and m.ordinal between ? and ? order by m.ordinal`,
       )
       .all(sourcePath, anchor.ordinal - context, anchor.ordinal + context) as MessageRow[];
-    if (parsed.flags.has("json")) emit({ source_path: sourcePath, line: anchor.line, context, count: rows.length, messages: rows });
-    else for (const row of rows) process.stdout.write(`${row.line === anchor.line ? "▸" : " "} ${row.role} · ${row.ts}\n${row.body}\n\n`);
+    const withFlag = rows.map((row) => ({ ...row, truncated: wasTruncated(row) }));
+    if (parsed.flags.has("json")) {
+      emit({ source_path: sourcePath, line: anchor.line, context, count: rows.length, messages: withFlag });
+    } else {
+      for (const row of withFlag) {
+        process.stdout.write(
+          `${row.line === anchor.line ? "▸" : " "} ${row.role} · ${row.ts}` +
+            `${row.truncated ? " · truncated" : ""}\n${row.body}\n\n`,
+        );
+      }
+    }
     return EXIT.ok;
   } finally {
     db.close();

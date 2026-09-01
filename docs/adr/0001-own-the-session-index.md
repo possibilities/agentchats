@@ -19,8 +19,18 @@ acquired — so no semantic capability was actually in use.
 Retire cass. Replace it with a SQLite+FTS5 index that agentchats owns and
 builds directly from the Claude Code and Codex transcript stores. A
 measured prototype indexed at 1.57x the text size, projecting ~0.83 GB for
-the whole corpus — roughly 55x smaller than cass — answering queries in
-0-2 ms.
+the whole corpus and answering queries in 0-2 ms.
+
+That projection was low. The built index measures **1.84 GB** over 3,419
+sessions and 573,889 messages — still roughly 25x smaller than cass, but
+twice the estimate, because the prototype under-counted Codex tool output.
+Stored message bodies are 1,164 MB of it; the FTS index itself is only
+391 MB. Tool traffic is 86% of the stored text and prose 6.6%, so the size
+is a direct consequence of indexing what tools read and wrote, which is
+where error strings and file paths live. Queries stay in single-digit
+milliseconds for ordinary terms; a term matching hundreds of thousands of
+messages costs seconds, because FTS5 scores every match before it can
+rank.
 
 ## Consequences
 

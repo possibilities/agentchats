@@ -70,7 +70,12 @@ agentchats resume /path/to/session.jsonl --shell
 ```
 
 A hit carries `source_path` and `line` — feed both straight into
-`view`/`expand`/`resume`, don't reconstruct them. The positional query is
+`view`/`expand`/`resume`, don't reconstruct them.
+
+`view` and `expand` report `truncated`. Long tool output is stored capped, so
+a message flagged `truncated: true` is cut mid-text and the rest is not in
+the index — read the cited line of the transcript itself before quoting it as
+complete evidence. About 5% of messages are capped, nearly all tool output. The positional query is
 required but may be the empty string: `agentchats search "" --json` plus
 filters/aggregates is the query-less idiom for "everything in scope."
 
@@ -192,7 +197,7 @@ agentchats search "" --json --days 7 --aggregate date,agent
 ## Environment and layout
 
 - The index is derived state at `~/.local/state/agentchats/index.db` —
-  under a gigabyte for the whole corpus. Delete it and run
+  roughly 1.8 GB for the whole corpus. Delete it and run
   `agentchats index` to rebuild from nothing; nothing is lost, because
   every fact in it is re-derivable from the live transcript stores.
 - Those stores are `~/.claude/projects` (claude_code) and

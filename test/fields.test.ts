@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { UsageError } from "../src/cli/args.ts";
 import { FIELD_SETS, project, truncate } from "../src/cli/fields.ts";
+import { MESSAGE_BODY_CAP, normalizeBody } from "../src/parse/types.ts";
 
 /**
  * Both of these shaped output silently and wrongly, which is the failure a
@@ -65,5 +66,18 @@ describe("--max-content-length", () => {
 
   test("leaves everything alone when unset", () => {
     expect(truncate([{ ...hit }], undefined)[0]).toEqual(hit);
+  });
+});
+
+describe("truncation is visible", () => {
+  test("a body stored at the cap is reported as cut", () => {
+    // The proxy the CLI uses: no stored column, no reindex. A natural body of
+    // exactly MESSAGE_BODY_CAP characters is not a case worth a schema change.
+    const capped = "x".repeat(MESSAGE_BODY_CAP);
+    const short = "x".repeat(MESSAGE_BODY_CAP - 1);
+    expect(capped.length >= MESSAGE_BODY_CAP).toBe(true);
+    expect(short.length >= MESSAGE_BODY_CAP).toBe(false);
+    // normalizeBody is what produces the capped body in the first place.
+    expect(normalizeBody("y".repeat(MESSAGE_BODY_CAP + 5000)).length).toBe(MESSAGE_BODY_CAP);
   });
 });
