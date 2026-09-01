@@ -214,6 +214,11 @@ async function commandIndex(argv: string[], env: Record<string, string | undefin
         (report.failed > 0 ? `, failed ${report.failed}` : "") +
         ` (${report.scanned} scanned)\n`,
     );
+    // A root that was not there is worth saying out loud: its sessions are
+    // still searchable, but nothing under it was refreshed this run.
+    for (const root of report.unavailableRoots) {
+      process.stdout.write(`unavailable, left untouched: ${root}\n`);
+    }
   }
   return report.failed > 0 && report.indexed === 0 ? EXIT.error : EXIT.ok;
 }

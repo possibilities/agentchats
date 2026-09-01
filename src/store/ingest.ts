@@ -74,6 +74,10 @@ export interface IngestResult {
   removed: number;
   failed: number;
   failures: IngestFailure[];
+  /** Configured roots that were not there to read — an unmounted volume, a
+   * store this machine does not have. Their sessions stay in the index; see
+   * the retention rule in `ingest`. */
+  unavailableRoots: string[];
 }
 
 interface ScannedFile {
@@ -94,8 +98,17 @@ const TRANSCRIPT = /\.jsonl(\.zst)?$/;
  * to blow the stack. Directory symlinks are not followed: a loop under a
  * transcript root would turn a bounded walk into an unbounded one, and
  * neither store puts transcripts behind one. */
-function scanRoot(root: string, onError: (path: string, error: unknown) => void): ScannedFile[] {
+/**
+ * Walk one root. `available` distinguishes the two things an empty result can
+ * mean: a root that is present and holds nothing, and a root that is not
+ * there at all. Retention depends on telling them apart — see `ingest`.
+ */
+function scanRoot(
+  root: string,
+  onError: (path: string, error: unknown) => void,
+): { files: ScannedFile[]; available: boolean } {
   const files: ScannedFile[] = [];
+  let available = true;
   const stack: string[] = [root];
   while (stack.length > 0) {
     const dir = stack.pop();
@@ -107,6 +120,9 @@ function scanRoot(root: string, onError: (path: string, error: unknown) => void)
       // A root that is not installed on this machine is not a failure; a
       // root we cannot read is.
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") onError(dir, error);
+      // The root itself being absent is the case retention must not mistake
+      // for "every session under it was deleted".
+      if (dir === root) available = false;
       continue;
     }
     entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
@@ -129,7 +145,7 @@ function scanRoot(root: string, onError: (path: string, error: unknown) => void)
       stack.push(directories[index] as string);
     }
   }
-  return files;
+  return { files, available };
 }
 
 /** The parser whose root contains this one — the longest match, so a store
@@ -167,7 +183,12 @@ export async function ingest(db: Database, options: IngestOptions): Promise<Inge
   }
 
   const files: ScannedFile[] = [];
-  for (const root of roots) files.push(...scanRoot(root, record));
+  const unavailableRoots: string[] = [];
+  for (const root of roots) {
+    const scan = scanRoot(root, record);
+    files.push(...scan.files);
+    if (!scan.available) unavailableRoots.push(root);
+  }
 
   const known = new Map<string, KnownRow>();
   for (const row of db.query("SELECT id, source_path, size, mtime_ms FROM sessions").all() as {
@@ -308,10 +329,20 @@ export async function ingest(db: Database, options: IngestOptions): Promise<Inge
     }
   }
 
-  // The retention policy: the index mirrors the live stores, so a source
-  // file that is gone takes its session with it.
+  // The retention policy: the index mirrors the transcript stores, so a
+  // source file that is gone takes its session with it.
+  //
+  // "Gone" must mean the file was deleted, never that its whole root was
+  // unreadable this run. An unmounted external volume looks exactly like one
+  // whose every session was deleted, and mistaking the two silently empties
+  // the index of everything that volume holds — recoverable only by a full
+  // re-ingest once it returns. A row is eligible for removal only when the
+  // root that owns it was actually read.
+  const isUnder = (path: string, root: string): boolean =>
+    path === root || path.startsWith(root.endsWith("/") ? root : `${root}/`);
   for (const [path, row] of known) {
     if (present.has(path)) continue;
+    if (unavailableRoots.some((root) => isUnder(path, root))) continue;
     deleteById.run(row.id);
     removed++;
   }
@@ -326,5 +357,13 @@ export async function ingest(db: Database, options: IngestOptions): Promise<Inge
     removed += pruned.changes;
   }
 
-  return { scanned: files.length, indexed, skipped, removed, failed: failures.length, failures };
+  return {
+    scanned: files.length,
+    indexed,
+    skipped,
+    removed,
+    failed: failures.length,
+    failures,
+    unavailableRoots,
+  };
 }

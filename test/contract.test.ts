@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, renameSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openIndex } from "../src/store/schema.ts";
@@ -101,6 +101,66 @@ describe("the contract the chats skill documents", () => {
     } finally {
       db.close();
       rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("an unavailable root keeps its sessions instead of pruning them", async () => {
+    // The failure this prevents: an external volume holding archived
+    // transcripts is unmounted, the walk finds nothing under it, and the
+    // mirror rule reads that as "every session there was deleted" — silently
+    // emptying the index of an entire archive.
+    const root = mkdtempSync(join(tmpdir(), "agentchats-roots-"));
+    const live = join(root, "live");
+    const removable = join(root, "removable");
+    mkdirSync(live, { recursive: true });
+    mkdirSync(removable, { recursive: true });
+    try {
+      const paths = [join(live, "a.jsonl"), join(removable, "b.jsonl"), join(removable, "c.jsonl")];
+      for (const path of paths) await Bun.write(path, "{}\n");
+      const parse = (_content: string, path: string): ParsedSession => ({
+        agent: "claude_code",
+        sessionId: path,
+        sourcePath: path,
+        workspace: "/w",
+        title: path,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        threadSource: null,
+        originator: null,
+        messages: [{ ordinal: 0, line: 1, byteOffset: 0, role: "user", ts: "", body: `body ${path}` }],
+      });
+      const read = async (): Promise<string> => "{}";
+      const sources = {
+        roots: [live, removable],
+        parsers: {
+          claude_code: { root: live, parse, read },
+          codex: { root: removable, parse, read },
+        },
+      };
+      const db = openIndex(join(root, "index.db"));
+      const rows = (): number =>
+        (db.query("select count(*) c from sessions").get() as { c: number }).c;
+      try {
+        await ingest(db, sources);
+        expect(rows()).toBe(3);
+
+        renameSync(removable, `${removable}-gone`);
+        const offline = await ingest(db, sources);
+        expect(offline.removed).toBe(0);
+        expect(offline.unavailableRoots).toEqual([removable]);
+        expect(rows()).toBe(3);
+
+        // And a file genuinely deleted from a root that IS readable still goes.
+        rmSync(join(live, "a.jsonl"));
+        const pruned = await ingest(db, sources);
+        expect(pruned.removed).toBe(1);
+        expect(rows()).toBe(2);
+      } finally {
+        db.close();
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      rmSync(`${removable}-gone`, { recursive: true, force: true });
     }
   });
 });
