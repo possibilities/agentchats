@@ -119,11 +119,14 @@ Filters compose with any query:
 | Lever | Use |
 |---|---|
 | `--limit N` | Always set one |
-| `--fields minimal` | narrowest columns — wide scans |
-| `--fields summary` | a few more columns — the usual choice |
-| `--fields <csv>` | any custom comma list |
-| `--max-content-length N` | truncate long fields |
-| `--aggregate agent,workspace,date` | counts instead of content |
+| `--fields minimal` | `source_path`, `line`, `agent` — wide scans |
+| `--fields summary` | the above plus `workspace`, `title`, `snippet`, `score`, `created_at` — the usual choice |
+| `--fields <csv>` | any custom list of hit fields |
+| `--max-content-length N` | shorten `snippet` and `title`; citation fields are never touched |
+| `--aggregate agent,workspace,date` | counts instead of content; a comma list returns one facet per dimension |
+
+An unknown name in `--fields` is a usage error, not an empty result — a
+misspelling tells you so rather than looking like "no such data".
 
 Paginate with `--offset`, not by re-running a query wider.
 

@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import type { Database } from "bun:sqlite";
 import { daysAgo, integer, parseArgs, resolveWhen, UsageError } from "./args.ts";
 import { renderState, sessionLimit } from "./state.ts";
+import { FIELD_SETS, HIT_FIELDS, project, truncate } from "./fields.ts";
 import { indexPath } from "../store/paths.ts";
 import { openIndex } from "../store/schema.ts";
 import { ingest, type ParserBinding } from "../store/ingest.ts";
@@ -163,31 +164,6 @@ function workspaceOf(parsed: ReturnType<typeof parseArgs>): string | undefined {
   return raw === undefined ? undefined : resolve(raw);
 }
 
-const FIELD_SETS: Record<string, readonly string[]> = {
-  minimal: ["source_path", "line", "agent"],
-  summary: ["source_path", "line", "agent", "workspace", "title", "score", "created_at"],
-};
-
-/** Field selection is the agent's token budget in flag form. An unknown named
- * set is a usage error; a comma list is taken literally. */
-function project(rows: readonly Record<string, unknown>[], fields: string | undefined) {
-  if (fields === undefined) return rows;
-  const names = FIELD_SETS[fields] ?? fields.split(",").map((name) => name.trim());
-  if (names.length === 0) throw new UsageError("--fields needs at least one field");
-  return rows.map((row) => Object.fromEntries(names.map((name) => [name, row[name]])));
-}
-
-function truncate(rows: Record<string, unknown>[], max: number | undefined) {
-  if (max === undefined) return rows;
-  return rows.map((row) => {
-    const copy = { ...row };
-    for (const [key, value] of Object.entries(copy)) {
-      if (typeof value === "string" && value.length > max) copy[key] = `${value.slice(0, max)}…`;
-    }
-    return copy;
-  });
-}
-
 async function commandIndex(argv: string[], env: Record<string, string | undefined>): Promise<number> {
   const parsed = parseArgs(argv, { value: ["retain-days"], boolean: ["json", "full"] });
   const path = indexPath(env);
@@ -263,16 +239,29 @@ async function commandSearch(argv: string[], env: Record<string, string | undefi
     const scope = filters({ ...window, workspace: workspaceOf(parsed), agent: parsed.values["agent"] });
     const by = parsed.values["aggregate"];
     if (by !== undefined) {
-      // One dimension per call: a comma list would need a cross-product the
-      // callers have never wanted.
-      const dimension = by.split(",")[0]!.trim();
-      if (dimension !== "agent" && dimension !== "workspace" && dimension !== "date") {
-        throw new UsageError("--aggregate takes agent, workspace, or date");
+      // A comma list is independent facets, not a cross-product: "how much by
+      // agent, and how much by workspace" is the question callers ask, and it
+      // is what the skill has always documented.
+      const dimensions = by.split(",").map((name) => name.trim()).filter((name) => name !== "");
+      if (dimensions.length === 0) throw new UsageError("--aggregate needs a dimension");
+      for (const dimension of dimensions) {
+        if (dimension !== "agent" && dimension !== "workspace" && dimension !== "date") {
+          throw new UsageError(
+            `--aggregate has no dimension "${dimension}"; choose from agent, workspace, date`,
+          );
+        }
       }
+      const facets = dimensions.map((dimension) => ({
+        dimension,
+        buckets: aggregate(db, { by: dimension as AggregateDimension, query, ...scope }),
+      }));
       emit({
         query,
-        aggregate: dimension,
-        buckets: aggregate(db, { by: dimension as AggregateDimension, query, ...scope }),
+        aggregate: by,
+        // One dimension keeps the flat shape it has always had; several add
+        // `facets` beside it rather than changing what a caller already reads.
+        ...(facets.length === 1 ? { buckets: facets[0]!.buckets } : {}),
+        facets,
       });
       return EXIT.ok;
     }
