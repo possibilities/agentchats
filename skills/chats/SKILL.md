@@ -74,15 +74,36 @@ A hit carries `source_path` and `line` — feed both straight into
 required but may be the empty string: `agentchats search "" --json` plus
 filters/aggregates is the query-less idiom for "everything in scope."
 
+### Know how a hit was matched
+
+Every hit carries `matched_on`, and the response carries `fallback`. Read
+them before leaning on a result:
+
+- `matched_on: "message"` — the terms are in that message. The default, and
+  the only kind you should treat as proof.
+- `matched_on: "session"` — a *widened* match. When a multi-term query finds
+  fewer than three exact hits, the search retries for sessions containing
+  every term *somewhere*, not in one message. `fallback` is then `"session"`.
+  These are leads: open them before citing them.
+- `matched_on: "metadata"` — matched the session's title, workspace, or file
+  path rather than any message text.
+
 ## Query language
 
-FTS5 syntax. Terms AND by default, case-insensitive.
+FTS5 syntax. Terms AND by default, case-insensitive. **AND is scoped to a
+single message**: `deploy timeout` finds a message containing both words,
+not a session that mentions them in different turns. Quote a phrase for an
+exact sequence; split a broad question into two or three distinctive terms
+rather than searching a whole sentence.
 
 | Form | Example | Notes |
 |---|---|---|
 | Phrase | `"connection refused"` | exact sequence |
 | OR / NOT | `error OR warning`, `panic NOT test` | |
 | Prefix wildcard | `deploy*` | |
+
+There is no substring or suffix wildcard: `*config*` and `*ction` are not
+supported, and a leading `*` is simply dropped. Search a prefix instead.
 
 Filters compose with any query:
 
@@ -135,8 +156,15 @@ agentchats search "database migration strategy" --json --limit 8 --fields summar
 # then narrow: --agent codex, or --agent claude_code
 ```
 
-**File archaeology.** Which sessions touched this file? Filenames are
-searchable text:
+**Project archaeology.** For "which sessions touched this project", scope
+rather than search — the workspace is a filter, not a term:
+
+```bash
+agentchats sessions --workspace ~/code/myproject --json --limit 10
+```
+
+**File archaeology.** Which sessions touched this file? Filenames appear in
+tool calls, so they are searchable text:
 
 ```bash
 agentchats search "install-ai-tools" --json --limit 5 --fields summary

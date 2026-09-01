@@ -492,9 +492,44 @@ function metadataMatches(
   });
 }
 
+/**
+ * The query-less listing. `search "" --workspace X --days 7` is the
+ * documented idiom for "everything in scope", and a query of only
+ * punctuation or operators reduces to the same thing. It is an index scan
+ * rather than a match, so there is no rank to sort by and no term to
+ * highlight: newest first, and the excerpt is the head of the body.
+ * Returning nothing here would be the worst answer — an agent reads it as
+ * "the archive holds nothing about this workspace".
+ */
+function scanRecent(db: Database, options: SearchOptions): SearchResult {
+  const filters = sessionFilters(options);
+  const hits = db
+    .query(
+      `SELECT sessions.source_path AS sourcePath, messages.line AS line,
+              sessions.agent AS agent, sessions.workspace AS workspace,
+              sessions.title AS title,
+              substr(messages.body, 1, 200) AS snippet,
+              0.0 AS score, sessions.created_at AS createdAt,
+              sessions.session_id AS sessionId, messages.ordinal AS ordinal,
+              messages.role AS role, sessions.thread_source AS threadSource,
+              sessions.originator AS originator, 'message' AS matchedOn
+       FROM messages
+       JOIN sessions ON sessions.id = messages.session_id
+       WHERE 1 = 1${filters.sql}
+       ORDER BY sessions.updated_at DESC, sessions.id ASC, messages.ordinal ASC
+       LIMIT $limit OFFSET $offset`,
+    )
+    .all({
+      $limit: options.limit,
+      $offset: options.offset ?? 0,
+      ...filters.bindings,
+    }) as SearchHit[];
+  return { hits, fallback: null };
+}
+
 export function search(db: Database, options: SearchOptions): SearchResult {
   const parsed = parseQuery(options.query);
-  if (parsed.match === null) return { hits: [], fallback: null };
+  if (parsed.match === null) return scanRecent(db, options);
   const marks = options.marks ?? DEFAULT_MARKS;
   const offset = options.offset ?? 0;
   const need = offset + options.limit;
