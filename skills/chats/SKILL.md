@@ -199,6 +199,10 @@ agentchats search "" --json --days 7 --aggregate date,agent
 
 ## Environment and layout
 
+- This tool's own recorded output is not indexed. A saved search result
+  holds your query terms densely and would otherwise win the very search
+  that produced it, so an `agentchats`/`cass` invocation and its output are
+  skipped at parse time. Conversation *about* the tool is indexed normally.
 - The index is derived state at `~/.local/state/agentchats/index.db` —
   roughly 1.8 GB for the whole corpus. Delete it and run
   `agentchats index` to rebuild from nothing; nothing is lost, because

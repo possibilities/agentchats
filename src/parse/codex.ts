@@ -129,7 +129,16 @@ interface Candidate {
   body: string;
 }
 
-function payloadCandidate(payload: Record<string, unknown>): Candidate | null {
+/** Shared with the Claude reader: a command that runs this tool, or the one
+ * it replaced. See the note in claude.ts for why its output must not be
+ * indexed. */
+const SELF_INVOCATION =
+  /\b(?:agentchats|cass)\s+(?:search|sessions|state|view|expand|resume|index|status|triage|pack)\b/;
+
+function payloadCandidate(
+  payload: Record<string, unknown>,
+  selfCalls: Set<string>,
+): Candidate | null {
   switch (payload["type"]) {
     case "message":
       return { role: messageRole(payload["role"]), body: contentText(payload["content"]) };
@@ -149,10 +158,16 @@ function payloadCandidate(payload: Record<string, unknown>): Candidate | null {
       // Custom tools take a raw string, function tools a JSON string; both
       // arrive already serialized.
       const argument = asString(payload["input"]) || asString(payload["arguments"]);
-      return { role: "tool_call", body: `${asString(payload["name"])} ${argument}` };
+      const body = `${asString(payload["name"])} ${argument}`;
+      if (SELF_INVOCATION.test(body)) {
+        selfCalls.add(asString(payload["call_id"]));
+        return null;
+      }
+      return { role: "tool_call", body };
     }
     case "custom_tool_call_output":
     case "function_call_output":
+      if (selfCalls.has(asString(payload["call_id"]))) return null;
       return { role: "tool_output", body: outputText(payload["output"]) };
     default:
       return null;
@@ -161,6 +176,8 @@ function payloadCandidate(payload: Record<string, unknown>): Candidate | null {
 
 export const parseCodex: Parser = (content, sourcePath) => {
   const messages: ParsedMessage[] = [];
+  /** call ids whose command runs this tool; their outputs are skipped. */
+  const selfCalls = new Set<string>();
   let workspace = "";
   let threadSource: string | null = null;
   let originator: string | null = null;
@@ -200,7 +217,7 @@ export const parseCodex: Parser = (content, sourcePath) => {
     if (type !== "response_item") continue;
     const payload = asRecord(record["payload"]);
     if (payload === null) continue;
-    const candidate = payloadCandidate(payload);
+    const candidate = payloadCandidate(payload, selfCalls);
     if (candidate === null) continue;
     const { body, truncated } = normalizeBody(candidate.body);
     if (body === "") continue;

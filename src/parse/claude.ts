@@ -100,7 +100,25 @@ interface Candidate {
  * which of the five a search actually hit, and the thinking would drown the
  * prose it was reasoning toward.
  */
-function blockCandidate(block: Record<string, unknown>, recordRole: Role): Candidate | null {
+/**
+ * A command that runs this tool, or the one it replaced. Their output is the
+ * index describing itself: a recorded search result contains the query terms
+ * at maximum density and no dilution, which is bm25's ideal document, so it
+ * wins the very query that produced it. Measured before this: 26.8% of
+ * rank-one hits were the tool's own output — searching `handoff-import`
+ * returned the saved output of a previous search for `handoff-import`.
+ *
+ * A subcommand is required, so a sentence discussing agentchats is not
+ * mistaken for an invocation of it.
+ */
+const SELF_INVOCATION =
+  /\b(?:agentchats|cass)\s+(?:search|sessions|state|view|expand|resume|index|status|triage|pack)\b/;
+
+function blockCandidate(
+  block: Record<string, unknown>,
+  recordRole: Role,
+  selfCalls: Set<string>,
+): Candidate | null {
   switch (block["type"]) {
     case "text":
       return { role: recordRole, body: asString(block["text"]) };
@@ -109,9 +127,15 @@ function blockCandidate(block: Record<string, unknown>, recordRole: Role): Candi
     case "tool_use": {
       const input = block["input"];
       const rendered = input === undefined ? "" : (JSON.stringify(input) ?? "");
-      return { role: "tool_call", body: `${asString(block["name"])} ${rendered}` };
+      const body = `${asString(block["name"])} ${rendered}`;
+      if (SELF_INVOCATION.test(body)) {
+        selfCalls.add(asString(block["id"]));
+        return null;
+      }
+      return { role: "tool_call", body };
     }
     case "tool_result":
+      if (selfCalls.has(asString(block["tool_use_id"]))) return null;
       return { role: "tool_output", body: toolResultText(block["content"]) };
     default:
       return null;
@@ -120,14 +144,14 @@ function blockCandidate(block: Record<string, unknown>, recordRole: Role): Candi
 
 /** `message.content` is a bare string for a plain turn and a block array for
  * everything richer. */
-function candidates(content: unknown, recordRole: Role): Candidate[] {
+function candidates(content: unknown, recordRole: Role, selfCalls: Set<string>): Candidate[] {
   if (typeof content === "string") return [{ role: recordRole, body: content }];
   if (!Array.isArray(content)) return [];
   const found: Candidate[] = [];
   for (const entry of content) {
     const block = asRecord(entry);
     if (block === null) continue;
-    const candidate = blockCandidate(block, recordRole);
+    const candidate = blockCandidate(block, recordRole, selfCalls);
     if (candidate !== null) found.push(candidate);
   }
   return found;
@@ -135,6 +159,8 @@ function candidates(content: unknown, recordRole: Role): Candidate[] {
 
 export const parseClaude: Parser = (content, sourcePath) => {
   const messages: ParsedMessage[] = [];
+  /** tool_use ids whose command runs this tool; their results are skipped. */
+  const selfCalls = new Set<string>();
   let workspace = "";
   let aiTitle = "";
   let firstPrompt = "";
@@ -174,7 +200,7 @@ export const parseClaude: Parser = (content, sourcePath) => {
     if (workspace === "") workspace = asString(record["cwd"]);
     const ts = asString(record["timestamp"]);
     const recordRole: Role = type === "user" ? "user" : "assistant";
-    for (const candidate of candidates(message["content"], recordRole)) {
+    for (const candidate of candidates(message["content"], recordRole, selfCalls)) {
       const { body, truncated } = normalizeBody(candidate.body);
       if (body === "") continue;
       if (candidate.role === "user") {

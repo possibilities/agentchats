@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { MESSAGE_BODY_CAP, normalizeBody } from "../src/parse/types.ts";
 import { parseCodex } from "../src/parse/codex.ts";
+import { parseClaude } from "../src/parse/claude.ts";
 import { deriveSessionId } from "../src/tui/resume.ts";
 
 /**
@@ -117,5 +118,50 @@ describe("Codex session identity", () => {
     expect(parsed!.sessionId).not.toBe(inherited);
     // And the id we publish is the one resume derives from the path.
     expect(deriveSessionId("codex", path)).toBe(parsed!.sessionId);
+  });
+});
+
+describe("the index does not index itself", () => {
+  const call = (id: string, cmd: string) =>
+    JSON.stringify({
+      type: "assistant", timestamp: "2026-09-01T00:00:00.000Z", cwd: "/w",
+      message: { role: "assistant", content: [{ type: "tool_use", id, name: "Bash", input: { command: cmd } }] },
+    });
+  const result = (id: string, text: string) =>
+    JSON.stringify({
+      type: "user", timestamp: "2026-09-01T00:00:01.000Z", cwd: "/w",
+      message: { role: "user", content: [{ type: "tool_result", tool_use_id: id, content: text }] },
+    });
+
+  test("a recorded search and its output are both skipped", () => {
+    // A saved search result holds the query terms at maximum density with no
+    // dilution — bm25's ideal document — so it wins the very query that
+    // produced it. Measured before this rule: 26.8% of rank-one hits were
+    // this tool's own output.
+    const transcript = [
+      call("t1", 'agentchats search "handoff-import" --json --limit 5'),
+      result("t1", '{"query":"handoff-import","hits":[{"source_path":"/x.jsonl","line":3}]}'),
+      call("t2", "rg handoff-import src/"),
+      result("t2", "src/handoff.ts:12: handoff-import"),
+    ].join("\n");
+    const parsed = parseClaude(transcript, "/Users/x/.claude/projects/p/s.jsonl");
+    expect(parsed).not.toBeNull();
+    const bodies = parsed!.messages.map((m) => m.body);
+    expect(bodies.some((b) => b.includes("agentchats search"))).toBe(false);
+    expect(bodies.some((b) => b.includes('"hits"'))).toBe(false);
+    // An unrelated tool call in the same session is untouched.
+    expect(bodies.some((b) => b.includes("rg handoff-import"))).toBe(true);
+    expect(bodies.some((b) => b.includes("src/handoff.ts"))).toBe(true);
+  });
+
+  test("prose about the tool is still indexed", () => {
+    // Only an invocation is dropped. A conversation discussing agentchats is
+    // exactly the history someone will search for later.
+    const transcript = JSON.stringify({
+      type: "user", timestamp: "2026-09-01T00:00:00.000Z", cwd: "/w",
+      message: { role: "user", content: "should agentchats index the archive too?" },
+    });
+    const parsed = parseClaude(transcript, "/Users/x/.claude/projects/p/s.jsonl");
+    expect(parsed!.messages[0]!.body).toContain("agentchats index the archive");
   });
 });
