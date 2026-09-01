@@ -30,7 +30,7 @@ import { ensureIndexDirectory, MEMORY_INDEX } from "./paths.ts";
 /** Bumped whenever the shape changes. An index written by another version
  * is discarded and rebuilt rather than migrated — it is a cache over the
  * transcript stores, so rebuilding costs minutes and loses nothing. */
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS meta (
@@ -51,6 +51,9 @@ CREATE TABLE IF NOT EXISTS sessions (
   human_turns INTEGER NOT NULL DEFAULT 0,
   thread_source TEXT,
   originator TEXT,
+  -- Read from a preserved archive rather than a live store: searchable
+  -- history, but the harness can no longer resume it.
+  archived INTEGER NOT NULL DEFAULT 0,
   size INTEGER NOT NULL,
   mtime_ms INTEGER NOT NULL,
   indexed_at TEXT NOT NULL

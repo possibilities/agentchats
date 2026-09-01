@@ -97,6 +97,9 @@ export function loadVisibleRows(
 ): VisibleRowsResult {
   const window = since(request.window);
   const scope = {
+    // The picker resumes; an archived copy cannot be resumed, so offering one
+    // would only produce a fatal error on the pick.
+    resumableOnly: true as const,
     ...(request.scope !== null ? { workspace: request.scope } : {}),
     ...(window !== undefined ? { since: window } : {}),
   };

@@ -19,25 +19,36 @@ import {
 import { parseClaude } from "../parse/claude.ts";
 import { parseCodex, readRollout } from "../parse/codex.ts";
 import { deriveSessionId, resumeKind } from "../tui/resume.ts";
+import { type ArchiveRoot, loadAgentchatsConfig } from "../tui/config.ts";
 import { MESSAGE_BODY_CAP } from "../parse/types.ts";
 
 /** The two transcript stores, and the parser that reads each. Nothing else
  * is discovered: other agents' histories are out of scope by decision, not
  * by omission. */
-function liveSources(env: Record<string, string | undefined>): {
-  roots: string[];
-  parsers: Record<string, ParserBinding>;
-} {
+function liveSources(
+  env: Record<string, string | undefined>,
+  archives: readonly ArchiveRoot[] = [],
+): { roots: string[]; parsers: Record<string, ParserBinding> } {
   const home = env["HOME"] ?? "";
   const claude = resolve(home, ".claude/projects");
   const codex = resolve(home, ".codex/sessions");
-  return {
-    roots: [claude, codex],
-    parsers: {
-      claude_code: { root: claude, parse: parseClaude, read: (path) => Bun.file(path).text() },
-      codex: { root: codex, parse: parseCodex, read: readRollout },
-    },
+  const parsers: Record<string, ParserBinding> = {
+    claude_code: { root: claude, parse: parseClaude, read: (path) => Bun.file(path).text() },
+    codex: { root: codex, parse: parseCodex, read: readRollout },
   };
+  // Live roots first: when the same session exists in both, the live copy
+  // wins, because it is the one the harness can still resume.
+  const roots = [claude, codex];
+  archives.forEach((archive, index) => {
+    roots.push(archive.path);
+    parsers[`archive-${index}`] = {
+      root: archive.path,
+      archived: true,
+      parse: archive.agent === "codex" ? parseCodex : parseClaude,
+      read: archive.agent === "codex" ? readRollout : (path) => Bun.file(path).text(),
+    };
+  });
+  return { roots, parsers };
 }
 
 /** The wire shape agents parse. Internally the store speaks camelCase like
@@ -180,7 +191,7 @@ async function commandIndex(argv: string[], env: Record<string, string | undefin
   const db = openIndex(path);
   const retainDays = parsed.values["retain-days"];
   const report = await ingest(db, {
-    ...liveSources(env),
+    ...liveSources(env, (await loadAgentchatsConfig(env)).archives),
     ...(retainDays === undefined ? {} : { retainDays: integer(parsed, "retain-days", 0) }),
   });
   db.close();
@@ -200,14 +211,17 @@ async function commandIndex(argv: string[], env: Record<string, string | undefin
   return report.failed > 0 && report.indexed === 0 ? EXIT.error : EXIT.ok;
 }
 
-function commandStatus(argv: string[], env: Record<string, string | undefined>): number {
+async function commandStatus(
+  argv: string[],
+  env: Record<string, string | undefined>,
+): Promise<number> {
   const parsed = parseArgs(argv, { value: [], boolean: ["json"] });
   // status is the one command that must answer for an empty index rather than
   // refuse: "zero sessions" is the diagnosis being asked for, and a nonzero
   // exit carrying a full payload would break the rule that a failure leaves
   // stdout empty. It always succeeds; the payload carries the verdict.
   const db = openIndex(indexPath(env));
-  const work = pendingWork(db, liveSources(env));
+  const work = pendingWork(db, liveSources(env, (await loadAgentchatsConfig(env)).archives));
   const state = status(db);
   const report = {
     ...state,
@@ -452,10 +466,30 @@ function commandExpand(argv: string[], env: Record<string, string | undefined>):
 /** The native invocation for a session's own harness — the thing to hand a
  * human, never to run as a nested agent. Derived from the store layout, the
  * same rule the picker resumes by. */
-function commandResume(argv: string[], _env: Record<string, string | undefined>): number {
+function commandResume(argv: string[], env: Record<string, string | undefined>): number {
   const parsed = parseArgs(argv, { value: [], boolean: ["json", "shell"] });
   const sourcePath = parsed.positional[0];
   if (sourcePath === undefined) throw new UsageError("resume needs a session path");
+  // An archived transcript is a preserved copy; the harness reads only its own
+  // store, so printing a resume command for one would hand over an invocation
+  // that fails. Say why instead.
+  try {
+    const db = openIndex(indexPath(env));
+    const row = db
+      .query("SELECT archived FROM sessions WHERE source_path = ?")
+      .get(sourcePath) as { archived: number } | null;
+    db.close();
+    if (row !== null && row.archived === 1) {
+      throw new CliError(
+        "archived",
+        `${sourcePath} is a preserved copy, not a live session`,
+        "the harness pruned the original; the transcript is searchable and readable with view/expand, but cannot be resumed",
+      );
+    }
+  } catch (error) {
+    if (error instanceof CliError) throw error;
+    // No index, or no row: fall through and answer from the path alone.
+  }
   const agent = sourcePath.includes("/.codex/") ? "codex" : "claude_code";
   const kind = resumeKind(agent);
   if (kind === null) throw new CliError("unsupported", `${agent} sessions cannot be resumed`);

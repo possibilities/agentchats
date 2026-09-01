@@ -22,6 +22,9 @@ import { SCHEMA_VERSION, storedSchemaVersion } from "./schema.ts";
 export interface SessionFilters {
   workspace?: string;
   agent?: string;
+  /** Limit to sessions the harness can still resume. The picker sets it: a
+   * row that fatally refuses on Enter has no business in a resume picker. */
+  resumableOnly?: boolean;
   /** Inclusive ISO 8601 bounds on the session's last activity. Compared as
    * text, which is exactly what ISO 8601 was designed for. */
   since?: string;
@@ -245,6 +248,7 @@ type Bindings = Record<string, string | number>;
 function sessionFilters(filters: SessionFilters): { sql: string; bindings: Bindings } {
   const clauses: string[] = [];
   const bindings: Bindings = {};
+  if (filters.resumableOnly === true) clauses.push("sessions.archived = 0");
   if (filters.workspace !== undefined) {
     clauses.push("sessions.workspace = $workspace");
     bindings["$workspace"] = filters.workspace;

@@ -24,6 +24,10 @@ import { join } from "node:path";
 import type { ParsedSession, Parser } from "../parse/types.ts";
 
 export interface ParserBinding {
+  /** This root holds preserved copies rather than the harness's own store.
+   * Its sessions are searchable but not resumable, and a live copy of the
+   * same session always wins. */
+  archived?: boolean;
   /** The store's root directory. Every transcript beneath it is this
    * parser's, which is how a walked file finds its parser. */
   root: string;
@@ -254,14 +258,23 @@ export async function ingest(db: Database, options: IngestOptions): Promise<Inge
   }
 
   const known = knownRows(db);
+  // An archive is an rsync copy of a live store, so the same conversation
+  // exists at two paths under the same filename — and `-a` preserves mtime,
+  // so size and mtime cannot tell the copies apart either. The transcript
+  // filename is the native session id, which makes it the identity. Roots are
+  // walked in the order given, so the first root to claim a session keeps it;
+  // callers list live stores before archives, and the live copy is the one
+  // that can still be resumed.
+  const claimed = new Set<string>();
 
   const deleteByPath = db.query("DELETE FROM sessions WHERE source_path = ?");
   const deleteById = db.query("DELETE FROM sessions WHERE id = ?");
   const insertSession = db.query(
     `INSERT INTO sessions
        (agent, session_id, source_path, workspace, title, created_at, updated_at,
-        message_count, human_turns, thread_source, originator, size, mtime_ms, indexed_at)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
+        message_count, human_turns, thread_source, originator, archived, size, mtime_ms,
+        indexed_at)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
      RETURNING id`,
   );
   const insertMessage = db.query(
@@ -271,7 +284,7 @@ export async function ingest(db: Database, options: IngestOptions): Promise<Inge
 
   /** Replacement is one transaction: the DELETE cascades to `messages`,
    * whose trigger clears the FTS rows, so a session is never half-old. */
-  const replace = db.transaction((session: ParsedSession, file: ScannedFile) => {
+  const replace = db.transaction((session: ParsedSession, file: ScannedFile, archived: boolean) => {
     deleteByPath.run(file.path);
     const inserted = insertSession.get(
       session.agent,
@@ -285,6 +298,7 @@ export async function ingest(db: Database, options: IngestOptions): Promise<Inge
       session.messages.filter((entry) => entry.role === "user").length,
       session.threadSource,
       session.originator,
+      archived ? 1 : 0,
       file.size,
       file.mtimeMs,
       now().toISOString(),
@@ -335,6 +349,20 @@ export async function ingest(db: Database, options: IngestOptions): Promise<Inge
       continue;
     }
 
+    const identity = file.path.slice(file.path.lastIndexOf("/") + 1);
+    if (claimed.has(identity)) {
+      // A copy of a session an earlier root already supplied. Drop any row it
+      // left behind rather than carrying the same conversation twice.
+      if (existing !== undefined) {
+        deleteById.run(existing.id);
+        removed++;
+      }
+      skipped++;
+      report(file.path, "skipped");
+      continue;
+    }
+    claimed.add(identity);
+
     if (isUnchanged(file, existing)) {
       present.add(file.path);
       skipped++;
@@ -342,9 +370,9 @@ export async function ingest(db: Database, options: IngestOptions): Promise<Inge
       continue;
     }
 
+    const binding = bindingFor(file.path, parsers);
     let session: ParsedSession | null;
     try {
-      const binding = bindingFor(file.path, parsers);
       if (binding === null) throw new Error("no parser owns this file");
       session = binding.parse(await binding.read(file.path), file.path);
     } catch (error) {
@@ -370,7 +398,7 @@ export async function ingest(db: Database, options: IngestOptions): Promise<Inge
     }
 
     try {
-      replace(session, file);
+      replace(session, file, binding?.archived === true);
       present.add(file.path);
       indexed++;
       report(file.path, "indexed");

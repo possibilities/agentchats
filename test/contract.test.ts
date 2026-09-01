@@ -210,4 +210,64 @@ describe("the contract the chats skill documents", () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  test("an archived copy never duplicates the live session it copies", async () => {
+    // The archive is an rsync copy, so the same conversation exists at two
+    // paths under one filename, with identical size and mtime because -a
+    // preserves them. Indexing both would double every session in the state
+    // dump and the picker.
+    const root = mkdtempSync(join(tmpdir(), "agentchats-archive-"));
+    const live = join(root, "live");
+    const archive = join(root, "archive");
+    mkdirSync(live, { recursive: true });
+    mkdirSync(archive, { recursive: true });
+    try {
+      const name = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.jsonl";
+      for (const dir of [live, archive]) await Bun.write(join(dir, name), "{}\n");
+      const parse = (_c: string, p: string): ParsedSession => ({
+        agent: "claude_code", sessionId: name.replace(".jsonl", ""), sourcePath: p,
+        workspace: "/w", title: "one conversation",
+        createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z",
+        threadSource: null, originator: null,
+        messages: [{ ordinal: 0, line: 1, byteOffset: 0, role: "user", ts: "", body: "hello", truncated: false }],
+      });
+      const read = async (): Promise<string> => "{}";
+      const db = openIndex(join(root, "index.db"));
+      try {
+        // Live root listed first, as callers must.
+        await ingest(db, {
+          roots: [live, archive],
+          parsers: {
+            claude_code: { root: live, parse, read },
+            archive: { root: archive, parse, read, archived: true },
+          },
+        });
+        const rows = db.query("select source_path, archived from sessions").all() as
+          { source_path: string; archived: number }[];
+        expect(rows).toHaveLength(1);
+        expect(rows[0]!.source_path).toBe(join(live, name));
+        expect(rows[0]!.archived).toBe(0);
+
+        // With the live copy pruned by the harness, the archive supplies it —
+        // searchable, and marked as no longer resumable.
+        rmSync(join(live, name));
+        await ingest(db, {
+          roots: [live, archive],
+          parsers: {
+            claude_code: { root: live, parse, read },
+            archive: { root: archive, parse, read, archived: true },
+          },
+        });
+        const after = db.query("select source_path, archived from sessions").all() as
+          { source_path: string; archived: number }[];
+        expect(after).toHaveLength(1);
+        expect(after[0]!.source_path).toBe(join(archive, name));
+        expect(after[0]!.archived).toBe(1);
+      } finally {
+        db.close();
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });

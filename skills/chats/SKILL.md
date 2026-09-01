@@ -204,7 +204,13 @@ agentchats search "" --json --days 7 --aggregate date,agent
   `agentchats index` to rebuild from nothing; nothing is lost, because
   every fact in it is re-derivable from the live transcript stores.
 - Those stores are `~/.claude/projects` (claude_code) and
-  `~/.codex/sessions` (codex) — nothing else is indexed.
+  `~/.codex/sessions` (codex). A preserved archive can be indexed beside
+  them, opt-in, by listing it in `~/.config/agentchats/config.json`:
+  `{"archives":[{"path":"/Volumes/Scratch/claude-archive/home/.claude/projects","agent":"claude_code"}]}`.
+  Archived sessions are searchable and readable but **not resumable** — the
+  harness pruned the original, so `resume` refuses them with `code:
+  "archived"` and the picker never offers them. When the same session exists
+  live and archived, the live copy wins.
 - `agentchats index` is incremental and cheap to rerun; `--retain-days N`
   bounds how far back it reaches, for accounts with long transcript
   history.

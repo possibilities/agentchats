@@ -69,7 +69,15 @@ synchronization path here.
   indexed row whose source transcript is gone, and that is the only
   pruning that happens. There is no separate pruning job, and there must
   not be one — a second deletion path would drift from what the
-  transcript stores actually contain.
+  transcript stores actually contain. The one exception is a root that
+  could not be read: an unmounted volume looks exactly like a store whose
+  every session was deleted, so removal is gated on the owning root having
+  actually been walked (`ingest.ts`, `unavailableRoots`).
+- Roots are walked in the order given and the first to claim a transcript
+  keeps it, identified by filename. That is what keeps an archive from
+  duplicating the live store it copies — `rsync -a` preserves mtime, so
+  size and mtime cannot tell two copies apart. Callers list live stores
+  before archives, because only the live copy can be resumed.
 
 ## After changing this repository
 
