@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { MESSAGE_BODY_CAP, normalizeBody } from "../src/parse/types.ts";
+import { parseCodex } from "../src/parse/codex.ts";
+import { deriveSessionId } from "../src/tui/resume.ts";
 
 /**
  * Regression cover for the tokenization trap that made real transcript
@@ -84,5 +86,36 @@ describe("normalizeBody", () => {
 
   test("bodies are capped", () => {
     expect(normalizeBody("x".repeat(MESSAGE_BODY_CAP + 500)).body).toHaveLength(MESSAGE_BODY_CAP);
+  });
+});
+
+describe("Codex session identity", () => {
+  test("comes from the filename, not the inherited session_meta id", () => {
+    // A forked or resumed Codex thread carries its parent's session_id in
+    // session_meta. In the live store 527 rows shared one, a single value
+    // covered 184 files, and 26% of rollouts disagreed with their own
+    // filename. Publishing that as `session_id` hands an agent an id that
+    // resumes a different conversation.
+    const path =
+      "/Users/x/.codex/sessions/2026/08/02/rollout-2026-08-02T21-24-26-019fc538-de47-7012-87dd-31ca0fe9890a.jsonl";
+    const inherited = "01a05008-e4a1-7ec3-bf57-9a8d7f32875c";
+    const rollout = [
+      JSON.stringify({
+        timestamp: "2026-08-02T21:24:26.000Z",
+        type: "session_meta",
+        payload: { session_id: inherited, cwd: "/w", thread_source: "user" },
+      }),
+      JSON.stringify({
+        timestamp: "2026-08-02T21:24:30.000Z",
+        type: "response_item",
+        payload: { type: "message", role: "user", content: [{ type: "input_text", text: "hello" }] },
+      }),
+    ].join("\n");
+    const parsed = parseCodex(rollout, path);
+    expect(parsed).not.toBeNull();
+    expect(parsed!.sessionId).toBe("019fc538-de47-7012-87dd-31ca0fe9890a");
+    expect(parsed!.sessionId).not.toBe(inherited);
+    // And the id we publish is the one resume derives from the path.
+    expect(deriveSessionId("codex", path)).toBe(parsed!.sessionId);
   });
 });

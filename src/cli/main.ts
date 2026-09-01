@@ -6,7 +6,7 @@ import { renderState, sessionLimit } from "./state.ts";
 import { FIELD_SETS, HIT_FIELDS, project, truncate } from "./fields.ts";
 import { indexPath } from "../store/paths.ts";
 import { openIndex } from "../store/schema.ts";
-import { ingest, type ParserBinding } from "../store/ingest.ts";
+import { ingest, type ParserBinding, pendingWork } from "../store/ingest.ts";
 import {
   aggregate,
   type AggregateDimension,
@@ -57,6 +57,7 @@ function hitJson(hit: SearchHit): Record<string, unknown> {
     ordinal: hit.ordinal,
     role: hit.role,
     matched_on: hit.matchedOn,
+    truncated: hit.truncated,
   };
 }
 
@@ -202,18 +203,39 @@ async function commandIndex(argv: string[], env: Record<string, string | undefin
 
 function commandStatus(argv: string[], env: Record<string, string | undefined>): number {
   const parsed = parseArgs(argv, { value: [], boolean: ["json"] });
-  // status is the one command that must answer for an empty index rather
-  // than refuse: "zero sessions" is the diagnosis being asked for.
+  // status is the one command that must answer for an empty index rather than
+  // refuse: "zero sessions" is the diagnosis being asked for, and a nonzero
+  // exit carrying a full payload would break the rule that a failure leaves
+  // stdout empty. It always succeeds; the payload carries the verdict.
   const db = openIndex(indexPath(env));
-  const report = { ...status(db), path: indexPath(env) };
+  const work = pendingWork(db, liveSources(env));
+  const state = status(db);
+  const report = {
+    ...state,
+    path: indexPath(env),
+    /** Is there an index worth searching at all. */
+    healthy: state.sessions > 0,
+    /** Would `agentchats index` change anything. */
+    stale: work.pending > 0 || work.vanished > 0,
+    pending: work.pending,
+    vanished: work.vanished,
+    scanned: work.scanned,
+    unavailableRoots: work.unavailableRoots,
+  };
   db.close();
   if (parsed.flags.has("json")) emit(report);
   else {
     process.stdout.write(
       `${report.sessions} sessions, ${report.messages} messages, ` +
         `${(report.bytes / 1e6).toFixed(0)} MB at ${report.path}\n` +
-        `newest indexed session: ${report.newestSession ?? "(none)"}\n`,
+        `newest indexed session: ${report.newestSession ?? "(none)"}\n` +
+        (report.stale
+          ? `stale: ${report.pending} to index, ${report.vanished} to drop — run: agentchats index\n`
+          : "fresh\n"),
     );
+    for (const root of report.unavailableRoots) {
+      process.stdout.write(`unavailable: ${root}\n`);
+    }
   }
   return EXIT.ok;
 }
@@ -501,7 +523,19 @@ async function main(argv: string[]): Promise<number> {
     return await run(argv.slice(1), process.env);
   } catch (error) {
     if (error instanceof UsageError) {
-      console.error(`agentchats ${name}: ${error.message}`);
+      // The skill states a non-negotiable: a failure puts
+      // {"error":{code,message,hint}} on stderr. Usage errors were the one
+      // path that printed bare prose, so an agent parsing stderr on exit 64
+      // got something it could not read.
+      console.error(
+        JSON.stringify({
+          error: {
+            code: "usage",
+            message: `agentchats ${name}: ${error.message}`,
+            hint: "run: agentchats --help",
+          },
+        }),
+      );
       return EXIT.usage;
     }
     if (error instanceof CliError) {

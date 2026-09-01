@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, renameSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openIndex } from "../src/store/schema.ts";
-import { ingest } from "../src/store/ingest.ts";
+import { ingest, pendingWork } from "../src/store/ingest.ts";
 import { search } from "../src/store/query.ts";
 import type { ParsedSession } from "../src/parse/types.ts";
 
@@ -161,6 +161,52 @@ describe("the contract the chats skill documents", () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
       rmSync(`${removable}-gone`, { recursive: true, force: true });
+    }
+  });
+
+  test("pendingWork reports what an index run would do, without doing it", async () => {
+    // This had no test, and shipped as infinite recursion: a refactor pointed
+    // the helper at itself and every caller hung. The freshness probe is the
+    // cheap question asked before a 6.5s index run, so it has to answer.
+    const root = mkdtempSync(join(tmpdir(), "agentchats-pending-"));
+    const store = join(root, "store");
+    mkdirSync(store, { recursive: true });
+    try {
+      const path = join(store, "a.jsonl");
+      await Bun.write(path, "{}\n");
+      const parse = (_c: string, p: string): ParsedSession => ({
+        agent: "claude_code", sessionId: p, sourcePath: p, workspace: "/w", title: p,
+        createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z",
+        threadSource: null, originator: null,
+        messages: [{ ordinal: 0, line: 1, byteOffset: 0, role: "user", ts: "", body: "hello", truncated: false }],
+      });
+      const sources = {
+        roots: [store],
+        parsers: { claude_code: { root: store, parse, read: async (): Promise<string> => "{}" } },
+      };
+      const db = openIndex(join(root, "index.db"));
+      try {
+        const before = pendingWork(db, sources);
+        expect(before).toEqual({ scanned: 1, pending: 1, vanished: 0, unavailableRoots: [] });
+
+        await ingest(db, sources);
+        expect(pendingWork(db, sources)).toEqual({
+          scanned: 1, pending: 0, vanished: 0, unavailableRoots: [],
+        });
+
+        rmSync(path);
+        expect(pendingWork(db, sources).vanished).toBe(1);
+
+        // An unreadable root is not "everything under it vanished" here either.
+        rmSync(store, { recursive: true, force: true });
+        const offline = pendingWork(db, sources);
+        expect(offline.vanished).toBe(0);
+        expect(offline.unavailableRoots).toEqual([store]);
+      } finally {
+        db.close();
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
     }
   });
 });

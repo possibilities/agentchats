@@ -69,14 +69,23 @@ export interface SearchHit {
   workspace: string;
   title: string;
   snippet: string;
-  /** Raw bm25: negative, and *lower is better*. Passed through rather than
-   * normalized so a caller can compare hits across two queries — but only
-   * against hits of the same `matchedOn` kind. */
+  /**
+   * Raw bm25: negative, and lower is better. Comparable only *within* one
+   * query's results, as a re-rank key — never across queries and never as a
+   * quality threshold. Magnitude tracks how rare the term is, not how good
+   * the match is: measured best-hit scores run "the" −0.89, "herdr" −4.52,
+   * "ECONNREFUSED" −14.45, so the commonest word scores nearest zero.
+   */
   score: number;
   createdAt: string;
   sessionId: string;
   ordinal: number;
   role: Role;
+  /** The stored body was cut by the cap. Measured at 8.2% of returned hits —
+   * above the 5% corpus rate, because ranking favours exactly the long tool
+   * output the cap bites. Worth reading before deciding a snippet earns a
+   * `view`, since `view --full` is what recovers the rest. */
+  truncated: boolean;
   /** Codex rollout metadata, carried on every result row so the picker can
    * tell an auxiliary session (app-server, realtime, a child thread) from a
    * real one without reopening the transcript. Null for Claude Code. */
@@ -316,7 +325,7 @@ function hitColumns(kind: "message" | "session"): string {
           snippet(messages_fts, 0, $start, $end, $ellipsis, $tokens) AS snippet,
           bm25(messages_fts) AS score, sessions.created_at AS createdAt,
           sessions.session_id AS sessionId, messages.ordinal AS ordinal,
-          messages.role AS role, sessions.thread_source AS threadSource,
+          messages.role AS role, messages.truncated AS truncated, sessions.thread_source AS threadSource,
           sessions.originator AS originator, '${kind}' AS matchedOn`;
 }
 
@@ -461,6 +470,7 @@ function metadataMatches(
               sessions.title AS title, bm25(sessions_fts) AS score,
               sessions.created_at AS createdAt, sessions.session_id AS sessionId,
               messages.ordinal AS ordinal, messages.role AS role,
+              messages.truncated AS truncated,
               sessions.thread_source AS threadSource, sessions.originator AS originator,
               'metadata' AS matchedOn,
               highlight(sessions_fts, 0, $start, $end) AS highlightedTitle,
@@ -511,7 +521,7 @@ function scanRecent(db: Database, options: SearchOptions): SearchResult {
               substr(messages.body, 1, 200) AS snippet,
               0.0 AS score, sessions.created_at AS createdAt,
               sessions.session_id AS sessionId, messages.ordinal AS ordinal,
-              messages.role AS role, sessions.thread_source AS threadSource,
+              messages.role AS role, messages.truncated AS truncated, sessions.thread_source AS threadSource,
               sessions.originator AS originator, 'message' AS matchedOn
        FROM messages
        JOIN sessions ON sessions.id = messages.session_id
@@ -524,7 +534,14 @@ function scanRecent(db: Database, options: SearchOptions): SearchResult {
       $offset: options.offset ?? 0,
       ...filters.bindings,
     }) as SearchHit[];
-  return { hits, fallback: null };
+  return { hits: asBoolean(hits), fallback: null };
+}
+
+/** SQLite stores the flag as 0/1; the contract says boolean. Normalise once
+ * here so no caller has to remember which it is. */
+function asBoolean(hits: SearchHit[]): SearchHit[] {
+  for (const hit of hits) hit.truncated = Boolean(hit.truncated);
+  return hits;
 }
 
 export function search(db: Database, options: SearchOptions): SearchResult {
@@ -571,7 +588,7 @@ export function search(db: Database, options: SearchOptions): SearchResult {
     );
   }
 
-  return { hits: hits.slice(offset), fallback };
+  return { hits: asBoolean(hits.slice(offset)), fallback };
 }
 
 export function sessions(

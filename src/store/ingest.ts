@@ -166,6 +166,69 @@ function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** The one definition of "this file is already indexed as it stands". Shared
+ * with `pendingWork` so a freshness probe and the indexer cannot drift into
+ * disagreeing about what needs doing — a disagreement that would be silent. */
+function isUnchanged(file: ScannedFile, known: KnownRow | undefined): boolean {
+  return known !== undefined && known.size === file.size && known.mtimeMs === file.mtimeMs;
+}
+
+/** The indexed rows, keyed by path. */
+function knownRows(db: Database): Map<string, KnownRow> {
+  const known = new Map<string, KnownRow>();
+  for (const row of db.query("SELECT id, source_path, size, mtime_ms FROM sessions").all() as {
+    id: number;
+    source_path: string;
+    size: number;
+    mtime_ms: number;
+  }[]) {
+    known.set(row.source_path, { id: row.id, size: row.size, mtimeMs: row.mtime_ms });
+  }
+  return known;
+}
+
+export interface PendingReport {
+  /** Transcripts the walk found. */
+  scanned: number;
+  /** Transcripts new or changed since they were indexed. */
+  pending: number;
+  /** Indexed sessions whose transcript is gone from a readable root. */
+  vanished: number;
+  unavailableRoots: string[];
+}
+
+/**
+ * What an index run would do, without doing it. A no-op `agentchats index`
+ * costs about 6.5 seconds; this costs about 0.2, so it is the cheap question
+ * to ask before spending that — which is what the skill's preflight step is
+ * for.
+ */
+export function pendingWork(db: Database, options: IngestOptions): PendingReport {
+  const files: ScannedFile[] = [];
+  const unavailableRoots: string[] = [];
+  for (const root of options.roots) {
+    const scan = scanRoot(root, () => {});
+    files.push(...scan.files);
+    if (!scan.available) unavailableRoots.push(root);
+  }
+  const known = knownRows(db);
+  const seen = new Set<string>();
+  let pending = 0;
+  for (const file of files) {
+    seen.add(file.path);
+    if (!isUnchanged(file, known.get(file.path))) pending++;
+  }
+  const isUnder = (path: string, root: string): boolean =>
+    path === root || path.startsWith(root.endsWith("/") ? root : `${root}/`);
+  let vanished = 0;
+  for (const path of known.keys()) {
+    if (seen.has(path)) continue;
+    if (unavailableRoots.some((root) => isUnder(path, root))) continue;
+    vanished++;
+  }
+  return { scanned: files.length, pending, vanished, unavailableRoots };
+}
+
 export async function ingest(db: Database, options: IngestOptions): Promise<IngestResult> {
   const { roots, parsers, onProgress } = options;
   const now = options.now ?? (() => new Date());
@@ -190,15 +253,7 @@ export async function ingest(db: Database, options: IngestOptions): Promise<Inge
     if (!scan.available) unavailableRoots.push(root);
   }
 
-  const known = new Map<string, KnownRow>();
-  for (const row of db.query("SELECT id, source_path, size, mtime_ms FROM sessions").all() as {
-    id: number;
-    source_path: string;
-    size: number;
-    mtime_ms: number;
-  }[]) {
-    known.set(row.source_path, { id: row.id, size: row.size, mtimeMs: row.mtime_ms });
-  }
+  const known = knownRows(db);
 
   const deleteByPath = db.query("DELETE FROM sessions WHERE source_path = ?");
   const deleteById = db.query("DELETE FROM sessions WHERE id = ?");
@@ -280,11 +335,7 @@ export async function ingest(db: Database, options: IngestOptions): Promise<Inge
       continue;
     }
 
-    if (
-      existing !== undefined &&
-      existing.size === file.size &&
-      existing.mtimeMs === file.mtimeMs
-    ) {
+    if (isUnchanged(file, existing)) {
       present.add(file.path);
       skipped++;
       report(file.path, "skipped");

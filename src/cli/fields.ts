@@ -10,6 +10,7 @@ import { UsageError } from "./args.ts";
 export const HIT_FIELDS = [
   "source_path", "line", "agent", "workspace", "title", "snippet",
   "score", "created_at", "session_id", "ordinal", "role", "matched_on",
+  "truncated",
 ] as const;
 
 export const FIELD_SETS: Record<string, readonly string[]> = {

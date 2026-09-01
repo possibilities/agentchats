@@ -32,15 +32,25 @@ asking the user what happened, search the index.
 ## Preflight
 
 ```bash
-agentchats status --json      # is the index present and fresh
+agentchats status --json      # is the index present, and is it fresh
 ```
 
-- **Missing index** (exit 3) → `agentchats index --full` — first build,
-  scans every transcript.
-- **Stale** → `agentchats index` — incremental: only sessions written or
-  changed since the last run. Cheap enough to run before every search
-  session.
-- **Healthy** → search directly.
+`status` always succeeds — reporting "zero sessions" is an answer, not a
+failure — so branch on the payload, not the exit code:
+
+- `healthy: false` → nothing is indexed yet. `agentchats index`.
+- `stale: true` → `pending` transcripts are new or changed and `vanished`
+  indexed sessions are gone. `agentchats index` reconciles both.
+- `stale: false` → search directly.
+
+Worth the extra call: `status` costs about half a second because it only
+stats the stores, while an index run that finds nothing to do still costs
+around six. Ask the cheap question before spending the expensive one.
+
+`unavailableRoots` names any transcript store that could not be read this
+run — an unmounted volume, a store this machine doesn't have. Sessions from
+an unavailable root stay searchable and are never pruned, but nothing under
+it was refreshed.
 
 ### Workspace bearings
 
@@ -192,7 +202,7 @@ agentchats search "" --json --days 7 --aggregate date,agent
 |---|---|---|
 | 0 | success | parse stdout |
 | 1 | error | read `hint` on stderr, act on it |
-| 3 | missing index | `agentchats index --full` |
+| 3 | index holds nothing — `search`/`sessions`/`view` only | `agentchats index` |
 | 64 | usage error | fix the invocation per `hint` |
 
 ## Environment and layout

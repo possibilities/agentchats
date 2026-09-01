@@ -72,8 +72,15 @@ function collapse(text: string): string {
   return text.replace(/\s+/g, " ").trim();
 }
 
-/** The rollout filename carries the session id Codex resumes by, which is
- * the only source when a legacy rollout has no session_meta. */
+/**
+ * The rollout filename carries the id Codex actually resumes by, and it is
+ * the only value that identifies *this* rollout: `session_meta.session_id`
+ * is inherited by forked threads and collides across files. The whole fleet
+ * already resumes by this — the picker's directive, `agentchats resume`, and
+ * agentlaunch's `--x-resume` all derive it from the path — so the index
+ * publishing anything else in `session_id` would hand agents an id that
+ * resumes the wrong conversation.
+ */
 function sessionIdFromPath(sourcePath: string): string {
   const base = sourcePath.split("/").pop() ?? "";
   const match = base.match(ROLLOUT_ID);
@@ -155,7 +162,6 @@ function payloadCandidate(payload: Record<string, unknown>): Candidate | null {
 export const parseCodex: Parser = (content, sourcePath) => {
   const messages: ParsedMessage[] = [];
   let workspace = "";
-  let sessionId = "";
   let threadSource: string | null = null;
   let originator: string | null = null;
   let title = "";
@@ -180,7 +186,10 @@ export const parseCodex: Parser = (content, sourcePath) => {
     if (type === "session_meta") {
       const meta = asRecord(record["payload"]);
       if (meta === null) continue;
-      sessionId = asString(meta["session_id"]) || asString(meta["id"]);
+      // `session_meta.session_id` is deliberately not read: a forked or
+      // resumed thread inherits its parent's, so it names a lineage rather
+      // than this rollout. 527 rows in the local store shared one, and a
+      // single value covered 184 files. Identity comes from the filename.
       workspace = asString(meta["cwd"]);
       const source = asString(meta["thread_source"] ?? meta["threadSource"]);
       threadSource = source === "" ? null : source;
@@ -218,7 +227,7 @@ export const parseCodex: Parser = (content, sourcePath) => {
   const stamps = messages.map((message) => message.ts).filter((ts) => ts !== "");
   return {
     agent: "codex",
-    sessionId: sessionId !== "" ? sessionId : sessionIdFromPath(sourcePath),
+    sessionId: sessionIdFromPath(sourcePath),
     sourcePath,
     workspace,
     // A session that never got past its preamble is still better named by
