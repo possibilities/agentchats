@@ -79,6 +79,12 @@ agentchats expand /path/to/session.jsonl --line 42 --context 5 --json
 agentchats resume /path/to/session.jsonl --shell
 ```
 
+**One hit is one session.** Results are ranked sessions, not ranked
+messages: a session scores by its best matching message plus a bonus for how
+many matched, and the hit carries that best message as the citation. So
+`--limit 10` means ten conversations, not ten lines from three of them. When
+you want more evidence from a session you already have, `expand` it.
+
 A hit carries `source_path` and `line` — feed both straight into
 `view`/`expand`/`resume`, don't reconstruct them.
 
@@ -95,8 +101,8 @@ filters/aggregates is the query-less idiom for "everything in scope."
 Every hit carries `matched_on`, and the response carries `fallback`. Read
 them before leaning on a result:
 
-- `matched_on: "message"` — the terms are in that message. The default, and
-  the only kind you should treat as proof.
+- `matched_on: "message"` — the terms are in that session's cited message.
+  The default, and the only kind to treat as proof.
 - `matched_on: "session"` — a *widened* match. When a multi-term query finds
   fewer than three exact hits, the search retries for sessions containing
   every term *somewhere*, not in one message. `fallback` is then `"session"`.

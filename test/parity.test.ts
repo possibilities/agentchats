@@ -138,8 +138,10 @@ maybe("lexical parity against ground truth", () => {
 
       const misses: string[] = [];
       for (const [token, expected] of probes) {
+        // A page is sessions now, so the limit is a session count: 500 is far
+        // above the 2-8 sessions each probe term was chosen to appear in.
         const found = new Set(
-          search(db, { query: token, limit: 50_000, offset: 0 }).hits.map((hit) => hit.sourcePath),
+          search(db, { query: token, limit: 500, offset: 0 }).hits.map((hit) => hit.sourcePath),
         );
         for (const path of expected) {
           if (!found.has(path)) misses.push(`recall: "${token}" missed ${path}`);

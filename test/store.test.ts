@@ -472,13 +472,14 @@ describe("search", () => {
   test("ranks by bm25 and breaks ties deterministically", async () => {
     const db = await corpus();
     // Three message rows carry the identical body "widget alpha", so bm25
-    // cannot separate them: the order below is entirely the tie-break.
+    // cannot separate them. A page is sessions, so "older" — which holds two
+    // of the three — appears once, and its second match is what puts it
+    // ahead of the newer session: the score is the best message plus
+    // 2·ln(1 + matches), so a conversation that returned to the subject
+    // outranks one that mentioned it once. Recency remains the tie-break
+    // only when the scores are equal.
     const hits = found(db, { query: "widget alpha", limit: 10 });
-    expect(hits.map((hit) => `${hit.sessionId}:${hit.ordinal}`).slice(0, 3)).toEqual([
-      "newer:0",
-      "older:0",
-      "older:1",
-    ]);
+    expect(hits.map((hit) => `${hit.sessionId}:${hit.ordinal}`)).toEqual(["older:0", "newer:0"]);
     expect(found(db, { query: "widget alpha", limit: 10 })).toEqual(hits);
     expect(hits[0]?.score).toBeLessThan(0);
     db.close();
@@ -520,13 +521,13 @@ describe("search", () => {
     expect(found(db, { query: "widget", limit: 10, workspace: "/ws/beta" })).toHaveLength(1);
     expect(
       found(db, { query: "widget", limit: 10, agent: "claude_code" }).map((hit) => hit.sessionId),
-    ).toEqual(["newer", "older", "older"]);
+    ).toEqual(["older", "newer"]);
     expect(
       found(db, { query: "widget", limit: 10, since: "2026-08-01" }).map((hit) => hit.sessionId),
     ).toEqual(["newer", "codex-one"]);
     expect(
       found(db, { query: "widget", limit: 10, until: "2026-07-31" }).map((hit) => hit.sessionId),
-    ).toEqual(["older", "older"]);
+    ).toEqual(["older"]);
     db.close();
   });
 
@@ -560,7 +561,8 @@ describe("search", () => {
       expect(() => found(db, { query, limit: 5 })).not.toThrow();
     }
     expect(found(db, { query: "widget*", limit: 10 }).length).toBeGreaterThan(0);
-    expect(found(db, { query: '"widget alpha"', limit: 10 })).toHaveLength(3);
+    // Three matching messages, two of them in one session: two sessions.
+    expect(found(db, { query: '"widget alpha"', limit: 10 })).toHaveLength(2);
     expect(found(db, { query: "backlog OR nothingmatches", limit: 10 })).toHaveLength(1);
     expect(found(db, { query: "widget NOT alpha", limit: 10 })).toHaveLength(1);
     db.close();
@@ -673,11 +675,13 @@ describe("metadata search", () => {
     ]);
     const result = search(db, { query: "widget", limit: 50_000 });
 
-    expect(result.hits).toHaveLength(40_001);
+    // 100 sessions of 400 matching messages each collapse to 100 rows, plus
+    // the one session that matches only on metadata.
+    expect(result.hits).toHaveLength(101);
     expect(result.hits.filter((hit) => hit.matchedOn === "metadata")).toHaveLength(1);
     // The metadata hit is the one session with no matching message, and it
-    // lands after all 40,000 message hits despite being the newest.
-    expect(result.hits[40_000]).toMatchObject({ sessionId: "meta", matchedOn: "metadata" });
+    // lands after every message hit despite being the newest.
+    expect(result.hits[100]).toMatchObject({ sessionId: "meta", matchedOn: "metadata" });
     db.close();
   });
 
@@ -746,7 +750,7 @@ describe("session-scoped widening", () => {
     db.close();
   });
 
-  test("does not widen once the exact pass has enough to read", async () => {
+  test("widens when a page of sessions is still short", async () => {
     const db = await indexed([
       {
         name: "s1",
@@ -757,8 +761,13 @@ describe("session-scoped widening", () => {
     ]);
     const result = search(db, { query: "fable opus-1m", limit: 10 });
 
-    expect(result.fallback).toBe(null);
-    expect(result.hits.map((hit) => hit.sessionId)).toEqual(["s1", "s1", "s1"]);
+    // s1 holds all three exact matches, but a page is sessions, so the exact
+    // pass returns one row — and the page is now short enough for widening to
+    // run, which is the point of it. s2 carries both terms across separate
+    // messages and was unreachable while three messages from s1 counted as
+    // "enough to read".
+    expect(result.fallback).toBe("session");
+    expect(result.hits.map((hit) => hit.sessionId)).toEqual(["s1", "s2"]);
     db.close();
   });
 

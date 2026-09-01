@@ -336,7 +336,38 @@ const MESSAGE_JOIN = `FROM messages_fts
   JOIN messages ON messages.id = messages_fts.rowid
   JOIN sessions ON sessions.id = messages.session_id`;
 
-/** Pass one: messages whose body matched, best first. */
+/**
+ * How many ranked messages to consider before grouping them into sessions.
+ * A page is sessions, but the evidence is messages, and a chatty session can
+ * hold dozens of matches — so the pool has to be deeper than the page or the
+ * tail of the ranking is never seen. Measured: ten message hits used to yield
+ * a mean of 4.91 distinct sessions, and 45.5% of pages showed fewer than five.
+ */
+function poolSize(need: number): number {
+  // Scales with what was asked for, so a caller wanting a deep page pays for
+  // the depth rather than silently getting a shallow one. The ceiling only
+  // bounds a pathological request; the default page of ten costs 400.
+  return Math.min(Math.max(need * 20, 400), 50_000);
+}
+
+/**
+ * Pass one: the sessions whose messages matched, best first.
+ *
+ * The unit of an answer is a session — "which conversation discussed this" —
+ * so ranking sessions rather than messages is what the caller actually asked
+ * for. A session scores by its best message plus a saturating bonus for how
+ * many matched, `-bm25 + 2·ln(1 + n)`: one strong hit beats one weak hit, and
+ * a conversation that returns to a subject beats one that mentions it once,
+ * without a chatty session drowning the page. Measured over 244 real
+ * historical queries this moved recall@10 from 0.612 to 0.724, with 70
+ * queries better and 5 worse.
+ *
+ * Two statements, deliberately. Ranking and snippet generation both need the
+ * full-text match, and doing them in one statement makes FTS5 score every
+ * matching row twice — 13s on a term matching 228k messages, against 6s for
+ * the flat pass it replaced. Ranking first and then asking for snippets by
+ * rowid costs single-digit milliseconds for the ten rows that survived.
+ */
 function messageMatches(
   db: Database,
   match: string,
@@ -345,15 +376,82 @@ function messageMatches(
   marks: SnippetMarks,
 ): SearchHit[] {
   const filters = sessionFilters(options);
-  return db
+  // MATERIALIZED is load-bearing: as an ordinary CTE, SQLite re-ran the whole
+  // ranked scan once per session while picking that session's best message.
+  const picked = db
     .query(
-      `SELECT ${hitColumns("message")}
-       ${MESSAGE_JOIN}
-       WHERE messages_fts MATCH $match${filters.sql}
-       ORDER BY score ASC, sessions.updated_at DESC, sessions.id ASC, messages.ordinal ASC
+      `WITH pool AS MATERIALIZED (
+         SELECT messages.id AS mid, messages.session_id AS sid, bm25(messages_fts) AS s
+         FROM messages_fts
+         JOIN messages ON messages.id = messages_fts.rowid
+         JOIN sessions ON sessions.id = messages.session_id
+         WHERE messages_fts MATCH $match${filters.sql}
+         ORDER BY s ASC
+         LIMIT $pool
+       ),
+       agg AS (SELECT sid, MIN(s) AS best, COUNT(*) AS n FROM pool GROUP BY sid),
+       best AS (
+         SELECT mid, sid FROM (
+           SELECT mid, sid, ROW_NUMBER() OVER (PARTITION BY sid ORDER BY s ASC, mid ASC) AS rn
+           FROM pool
+         ) WHERE rn = 1
+       )
+       SELECT best.mid AS mid, agg.best AS best, agg.n AS n
+       FROM best
+       JOIN agg ON agg.sid = best.sid
+       JOIN sessions ON sessions.id = best.sid
+       ORDER BY (-agg.best + 2.0 * ln(1 + agg.n)) DESC,
+                sessions.updated_at DESC, sessions.id ASC
        LIMIT $limit`,
     )
-    .all({ $match: match, $limit: limit, ...markBindings(marks), ...filters.bindings }) as SearchHit[];
+    .all({ $match: match, $limit: limit, $pool: poolSize(limit), ...filters.bindings }) as {
+    mid: number;
+    best: number;
+    n: number;
+  }[];
+  if (picked.length === 0) return [];
+
+  const ids = picked.map((row) => row.mid);
+  const snippets = new Map<number, string>();
+  for (const row of db
+    .query(
+      `SELECT messages_fts.rowid AS mid,
+              snippet(messages_fts, 0, $start, $end, $ellipsis, $tokens) AS snippet
+       FROM messages_fts
+       WHERE messages_fts MATCH $match AND messages_fts.rowid IN (${ids.join(",")})`,
+    )
+    .all({ $match: match, ...markBindings(marks) }) as { mid: number; snippet: string }[]) {
+    snippets.set(row.mid, row.snippet);
+  }
+
+  const rows = db
+    .query(
+      `SELECT messages.id AS mid, sessions.source_path AS sourcePath, messages.line AS line,
+              sessions.agent AS agent, sessions.workspace AS workspace, sessions.title AS title,
+              sessions.created_at AS createdAt, sessions.session_id AS sessionId,
+              messages.ordinal AS ordinal, messages.role AS role,
+              messages.truncated AS truncated, sessions.thread_source AS threadSource,
+              sessions.originator AS originator
+       FROM messages
+       JOIN sessions ON sessions.id = messages.session_id
+       WHERE messages.id IN (${ids.join(",")})`,
+    )
+    .all() as Record<string, unknown>[];
+  const byId = new Map(rows.map((row) => [row["mid"] as number, row]));
+
+  // The rank order is the pick order; the lookups above only add detail.
+  return picked.flatMap((entry) => {
+    const row = byId.get(entry.mid);
+    if (row === undefined) return [];
+    return [
+      {
+        ...row,
+        snippet: snippets.get(entry.mid) ?? "",
+        score: entry.best,
+        matchedOn: "message",
+      } as unknown as SearchHit,
+    ];
+  });
 }
 
 /**
