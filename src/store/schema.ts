@@ -14,22 +14,23 @@
  * from `sessions` do fire the delete trigger (verified against SQLite
  * 3.51.0), which is what lets ingest replace a session with one DELETE.
  *
- * `sessions_fts` indexes metadata, not conversation: a session's title, the
- * workspace it ran in, and the path of the transcript itself. That is what
- * makes file archaeology work — "which sessions touched agentbrowse?"
- * answers from the workspace and the filename even when no message body
- * ever spells the word. Replaying real historical queries against a
- * body-only index lost 110 documents to exactly this.
+ * There is one full-text index, over message bodies. A second one over
+ * session metadata — title, workspace, transcript path — existed briefly to
+ * answer "which sessions touched agentbrowse?" from the workspace when no
+ * body spelled the word. Replayed against 246 real historical queries it
+ * returned zero hits at the page sizes agents use, and could have supplied
+ * at most 20 of 917 expected documents even unbounded. Scoping with
+ * `--workspace`, or listing with `sessions`, answers that question directly.
  */
 
 import { Database } from "bun:sqlite";
 import { rmSync } from "node:fs";
 import { ensureIndexDirectory, MEMORY_INDEX } from "./paths.ts";
 
-/** 2 adds `sessions_fts`. An index written by version 1 has no metadata
- * table to backfill, so it is discarded and rebuilt — which is the whole
- * point of versioning a cache. */
-export const SCHEMA_VERSION = 3;
+/** Bumped whenever the shape changes. An index written by another version
+ * is discarded and rebuilt rather than migrated — it is a cache over the
+ * transcript stores, so rebuilding costs minutes and loses nothing. */
+export const SCHEMA_VERSION = 4;
 
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS meta (
@@ -89,29 +90,6 @@ CREATE TRIGGER IF NOT EXISTS messages_au AFTER UPDATE ON messages BEGIN
   INSERT INTO messages_fts (rowid, body) VALUES (new.id, new.body);
 END;
 
-CREATE VIRTUAL TABLE IF NOT EXISTS sessions_fts USING fts5(
-  title,
-  workspace,
-  source_path,
-  content='sessions',
-  content_rowid='id',
-  tokenize='unicode61 remove_diacritics 2'
-);
-
-CREATE TRIGGER IF NOT EXISTS sessions_ai AFTER INSERT ON sessions BEGIN
-  INSERT INTO sessions_fts (rowid, title, workspace, source_path)
-  VALUES (new.id, new.title, new.workspace, new.source_path);
-END;
-CREATE TRIGGER IF NOT EXISTS sessions_ad AFTER DELETE ON sessions BEGIN
-  INSERT INTO sessions_fts (sessions_fts, rowid, title, workspace, source_path)
-  VALUES ('delete', old.id, old.title, old.workspace, old.source_path);
-END;
-CREATE TRIGGER IF NOT EXISTS sessions_au AFTER UPDATE ON sessions BEGIN
-  INSERT INTO sessions_fts (sessions_fts, rowid, title, workspace, source_path)
-  VALUES ('delete', old.id, old.title, old.workspace, old.source_path);
-  INSERT INTO sessions_fts (rowid, title, workspace, source_path)
-  VALUES (new.id, new.title, new.workspace, new.source_path);
-END;
 `;
 
 /**

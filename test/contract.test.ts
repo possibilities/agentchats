@@ -77,15 +77,16 @@ describe("the contract the chats skill documents", () => {
     }
   });
 
-  test("every hit says how it matched, and the envelope reports widening", async () => {
+  test("a hit carries the citation and the flags a caller branches on", async () => {
     const { db, root } = await indexed();
     try {
       const result = search(db, { query: "ECONNREFUSED", limit: 10, offset: 0 });
       expect(result.hits.length).toBeGreaterThan(0);
       for (const hit of result.hits) {
-        expect(["message", "session", "metadata"]).toContain(hit.matchedOn);
+        expect(hit.sourcePath).not.toBe("");
+        expect(hit.line).toBeGreaterThan(0);
+        expect(typeof hit.truncated).toBe("boolean");
       }
-      expect([null, "session"]).toContain(result.fallback);
     } finally {
       db.close();
       rmSync(root, { recursive: true, force: true });

@@ -96,20 +96,6 @@ messages are capped, nearly all of them tool output. The positional query is
 required but may be the empty string: `agentchats search "" --json` plus
 filters/aggregates is the query-less idiom for "everything in scope."
 
-### Know how a hit was matched
-
-Every hit carries `matched_on`, and the response carries `fallback`. Read
-them before leaning on a result:
-
-- `matched_on: "message"` — the terms are in that session's cited message.
-  The default, and the only kind to treat as proof.
-- `matched_on: "session"` — a *widened* match. When a multi-term query finds
-  fewer than three exact hits, the search retries for sessions containing
-  every term *somewhere*, not in one message. `fallback` is then `"session"`.
-  These are leads: open them before citing them.
-- `matched_on: "metadata"` — matched the session's title, workspace, or file
-  path rather than any message text.
-
 ## Query language
 
 FTS5 syntax. Terms AND by default, case-insensitive. **AND is scoped to a
