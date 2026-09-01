@@ -29,7 +29,7 @@ import { ensureIndexDirectory, MEMORY_INDEX } from "./paths.ts";
 /** 2 adds `sessions_fts`. An index written by version 1 has no metadata
  * table to backfill, so it is discarded and rebuilt — which is the whole
  * point of versioning a cache. */
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS meta (
@@ -64,6 +64,7 @@ CREATE TABLE IF NOT EXISTS messages (
   ordinal INTEGER NOT NULL,
   line INTEGER NOT NULL,
   byte_offset INTEGER NOT NULL,
+  truncated INTEGER NOT NULL DEFAULT 0,
   role TEXT NOT NULL,
   ts TEXT NOT NULL DEFAULT '',
   body TEXT NOT NULL

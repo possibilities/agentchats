@@ -28,7 +28,7 @@ function storeRoot(): string {
 }
 
 function line(ordinal: number, role: Role, body: string): ParsedMessage {
-  return { ordinal, line: ordinal + 1, byteOffset: ordinal * 128, role, ts: "", body };
+  return { ordinal, line: ordinal + 1, byteOffset: ordinal * 128, role, ts: "", body, truncated: false };
 }
 
 function parsed(overrides: Partial<ParsedSession> & { sourcePath: string }): ParsedSession {

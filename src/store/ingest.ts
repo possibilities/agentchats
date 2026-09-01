@@ -210,8 +210,8 @@ export async function ingest(db: Database, options: IngestOptions): Promise<Inge
      RETURNING id`,
   );
   const insertMessage = db.query(
-    `INSERT INTO messages (session_id, ordinal, line, byte_offset, role, ts, body)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`,
+    `INSERT INTO messages (session_id, ordinal, line, byte_offset, role, ts, body, truncated)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`,
   );
 
   /** Replacement is one transaction: the DELETE cascades to `messages`,
@@ -243,6 +243,7 @@ export async function ingest(db: Database, options: IngestOptions): Promise<Inge
         entry.role,
         entry.ts,
         entry.body,
+        entry.truncated ? 1 : 0,
       );
     }
   });

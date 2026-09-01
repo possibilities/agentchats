@@ -29,8 +29,8 @@ function fixture(root: string) {
     threadSource: null,
     originator: null,
     messages: [
-      { ordinal: 0, line: 1, byteOffset: 0, role: "user", ts: "", body: "the deploy timeout keeps firing" },
-      { ordinal: 1, line: 2, byteOffset: 40, role: "assistant", ts: "", body: "ECONNREFUSED from redis" },
+      { ordinal: 0, line: 1, byteOffset: 0, role: "user", ts: "", body: "the deploy timeout keeps firing", truncated: false },
+      { ordinal: 1, line: 2, byteOffset: 40, role: "assistant", ts: "", body: "ECONNREFUSED from redis", truncated: false },
     ],
   };
   return session;
@@ -127,7 +127,7 @@ describe("the contract the chats skill documents", () => {
         updatedAt: "2026-01-01T00:00:00.000Z",
         threadSource: null,
         originator: null,
-        messages: [{ ordinal: 0, line: 1, byteOffset: 0, role: "user", ts: "", body: `body ${path}` }],
+        messages: [{ ordinal: 0, line: 1, byteOffset: 0, role: "user", ts: "", body: `body ${path}`, truncated: false }],
       });
       const read = async (): Promise<string> => "{}";
       const sources = {

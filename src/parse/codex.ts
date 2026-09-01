@@ -193,7 +193,7 @@ export const parseCodex: Parser = (content, sourcePath) => {
     if (payload === null) continue;
     const candidate = payloadCandidate(payload);
     if (candidate === null) continue;
-    const body = normalizeBody(candidate.body);
+    const { body, truncated } = normalizeBody(candidate.body);
     if (body === "") continue;
     if (candidate.role === "user") {
       const excerpt = collapse(body).slice(0, TITLE_CAP);
@@ -211,6 +211,7 @@ export const parseCodex: Parser = (content, sourcePath) => {
       role: candidate.role,
       ts: asString(record["timestamp"]),
       body,
+      truncated,
     });
   }
   if (messages.length === 0) return null;

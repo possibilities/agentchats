@@ -73,9 +73,10 @@ A hit carries `source_path` and `line` — feed both straight into
 `view`/`expand`/`resume`, don't reconstruct them.
 
 `view` and `expand` report `truncated`. Long tool output is stored capped, so
-a message flagged `truncated: true` is cut mid-text and the rest is not in
-the index — read the cited line of the transcript itself before quoting it as
-complete evidence. About 5% of messages are capped, nearly all tool output. The positional query is
+a message flagged `truncated: true` is cut mid-text. Don't quote it as
+complete evidence — `agentchats view <path> --line N --full` reads the whole
+record from the transcript and returns it as `source_record`. About 5% of
+messages are capped, nearly all of them tool output. The positional query is
 required but may be the empty string: `agentchats search "" --json` plus
 filters/aggregates is the query-less idiom for "everything in scope."
 

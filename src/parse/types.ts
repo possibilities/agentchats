@@ -44,6 +44,15 @@ export interface ParsedMessage {
   ts: string;
   /** Already capped at MESSAGE_BODY_CAP; never empty after trimming. */
   body: string;
+  /**
+   * Whether the cap cut this body. Recorded at write time rather than
+   * inferred later from its stored length: `slice` counts UTF-16 code units
+   * and SQLite's `length()` counts code points, so a body holding an emoji
+   * stores fewer characters than the cap and an inference reads it as
+   * complete — 349 of them in this corpus, every one failing toward
+   * "nothing was lost".
+   */
+  truncated: boolean;
 }
 
 export interface ParsedSession {
@@ -86,9 +95,18 @@ const UNSEARCHABLE =
   /[\u00AD\u200B-\u200F\u202A-\u202E\u2060-\u2064\uE000-\uF8FF\uFEFF]|[\u{F0000}-\u{FFFFD}]|[\u{100000}-\u{10FFFD}]/gu;
 
 /** Strip what cannot be searched, collapse the whitespace that leaves behind,
- * trim, and cap. */
-export function normalizeBody(text: string): string {
+ * trim, and cap — reporting whether the cap actually cut anything, because
+ * only the writer can know that for certain. */
+export function normalizeBody(text: string): { body: string; truncated: boolean } {
   const cleaned = text.replace(UNSEARCHABLE, " ").replace(/[ \t]{2,}/g, " ").trim();
-  if (cleaned === "") return "";
-  return cleaned.length > MESSAGE_BODY_CAP ? cleaned.slice(0, MESSAGE_BODY_CAP) : cleaned;
+  if (cleaned === "") return { body: "", truncated: false };
+  if (cleaned.length <= MESSAGE_BODY_CAP) return { body: cleaned, truncated: false };
+  let cut = cleaned.slice(0, MESSAGE_BODY_CAP);
+  // `slice` counts UTF-16 code units, so the cap can land between the halves
+  // of a surrogate pair and leave a lone high surrogate — text that no longer
+  // round-trips through UTF-8. Drop the orphan rather than store something
+  // that is not a string.
+  const last = cut.charCodeAt(cut.length - 1);
+  if (last >= 0xd800 && last <= 0xdbff) cut = cut.slice(0, -1);
+  return { body: cut, truncated: true };
 }

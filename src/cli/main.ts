@@ -316,24 +316,40 @@ interface MessageRow {
   session_id: string;
   ordinal: number;
   line: number;
+  byte_offset: number;
   role: string;
   ts: string;
   body: string;
+  truncated: number;
 }
 
 const MESSAGE_COLUMNS = `s.source_path, s.agent, s.workspace, s.session_id,
-  m.ordinal, m.line, m.role, m.ts, m.body`;
+  m.ordinal, m.line, m.byte_offset, m.role, m.ts, m.body, m.truncated`;
 
 /**
- * A body stored at exactly the cap was cut, and until now nothing said so:
- * `view` returned prose ending mid-word with no marker, and the rest is not
- * recoverable through the CLI because the index is read, not the file. An
- * agent quoting that as complete evidence is quoting half a tool's output.
- * Inferred rather than stored, so no reindex is needed — a natural body of
- * exactly MESSAGE_BODY_CAP characters is not a case worth a schema change.
+ * The transcript record behind a stored message, read from the file at the
+ * byte offset ingest recorded. This is what makes a capped body recoverable:
+ * the index holds the first 16 KB, the transcript holds all of it, and the
+ * offset is the seek that avoids scanning a multi-megabyte file to find one
+ * line.
  */
+async function sourceRecord(row: MessageRow): Promise<string | null> {
+  try {
+    const file = Bun.file(row.source_path);
+    const tail = await file.slice(row.byte_offset).text();
+    const line = tail.split("\n", 1)[0] ?? "";
+    return line === "" ? null : line;
+  } catch {
+    return null;
+  }
+}
+
+/** Recorded by the parser at write time. It was briefly inferred from the
+ * stored length instead, which missed 349 cut bodies in this corpus: `slice`
+ * counts UTF-16 code units and SQLite's `length()` counts code points, so an
+ * emoji anywhere in a tool output made a truncated message look whole. */
 function wasTruncated(row: MessageRow): boolean {
-  return row.body.length >= MESSAGE_BODY_CAP;
+  return row.truncated === 1;
 }
 
 function messageAt(db: Database, sourcePath: string, line: number): MessageRow {
@@ -353,8 +369,11 @@ function messageAt(db: Database, sourcePath: string, line: number): MessageRow {
   return row;
 }
 
-function commandView(argv: string[], env: Record<string, string | undefined>): number {
-  const parsed = parseArgs(argv, { value: ["line"], boolean: ["json"] });
+async function commandView(
+  argv: string[],
+  env: Record<string, string | undefined>,
+): Promise<number> {
+  const parsed = parseArgs(argv, { value: ["line"], boolean: ["json", "full"] });
   const sourcePath = parsed.positional[0];
   if (sourcePath === undefined) throw new UsageError("view needs a session path");
   if (parsed.values["line"] === undefined) throw new UsageError("view needs --line");
@@ -362,12 +381,15 @@ function commandView(argv: string[], env: Record<string, string | undefined>): n
   try {
     const row = messageAt(db, sourcePath, integer(parsed, "line", 0));
     const truncated = wasTruncated(row);
-    if (parsed.flags.has("json")) emit({ ...row, truncated });
-    else {
+    const source = parsed.flags.has("full") ? await sourceRecord(row) : null;
+    if (parsed.flags.has("json")) {
+      emit({ ...row, truncated, ...(source !== null ? { source_record: source } : {}) });
+    } else {
       process.stdout.write(`${row.role} · ${row.ts}\n${row.body}\n`);
-      if (truncated) {
+      if (source !== null) process.stdout.write(`\n--- full record ---\n${source}\n`);
+      else if (truncated) {
         process.stdout.write(
-          `\n[truncated at ${MESSAGE_BODY_CAP} characters; read ${sourcePath} line ${row.line} for the rest]\n`,
+          `\n[truncated at ${MESSAGE_BODY_CAP} characters; rerun with --full for the whole record]\n`,
         );
       }
     }

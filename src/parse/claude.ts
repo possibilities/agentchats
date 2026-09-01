@@ -175,7 +175,7 @@ export const parseClaude: Parser = (content, sourcePath) => {
     const ts = asString(record["timestamp"]);
     const recordRole: Role = type === "user" ? "user" : "assistant";
     for (const candidate of candidates(message["content"], recordRole)) {
-      const body = normalizeBody(candidate.body);
+      const { body, truncated } = normalizeBody(candidate.body);
       if (body === "") continue;
       if (candidate.role === "user") {
         const excerpt = collapse(body).slice(0, TITLE_CAP);
@@ -185,7 +185,7 @@ export const parseClaude: Parser = (content, sourcePath) => {
           firstPrompt = excerpt;
         }
       }
-      messages.push({ ordinal: messages.length, line, byteOffset, role: candidate.role, ts, body });
+      messages.push({ ordinal: messages.length, line, byteOffset, role: candidate.role, ts, body, truncated });
     }
   }
   if (messages.length === 0) return null;

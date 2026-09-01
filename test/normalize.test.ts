@@ -26,32 +26,63 @@ function tokenizesTo(body: string, term: string): boolean {
 describe("normalizeBody", () => {
   test("private use area citation markers do not swallow the word beside them", () => {
     expect(tokenizesTo(CITATION, "severity")).toBe(false);
-    expect(tokenizesTo(normalizeBody(CITATION), "severity")).toBe(true);
+    expect(tokenizesTo(normalizeBody(CITATION).body, "severity")).toBe(true);
   });
 
   test("invisible separators become spaces rather than vanishing", () => {
     // Deleting the marker would merge these into one unfindable token.
-    expect(normalizeBody("alpha​beta")).toBe("alpha beta");
-    expect(tokenizesTo(normalizeBody("alpha​beta"), "beta")).toBe(true);
+    expect(normalizeBody("alpha​beta").body).toBe("alpha beta");
+    expect(tokenizesTo(normalizeBody("alpha​beta").body, "beta")).toBe(true);
   });
 
   test("zero width, bidi, soft hyphen, and BOM are all stripped", () => {
     for (const marker of ["​", "‎", "‭", "­", "﻿", "⁠", ""]) {
-      expect(normalizeBody(`one${marker}two`)).toBe("one two");
+      expect(normalizeBody(`one${marker}two`).body).toBe("one two");
     }
   });
 
   test("ordinary text and its interior newlines survive untouched", () => {
-    expect(normalizeBody("  hello\nworld  ")).toBe("hello\nworld");
-    expect(normalizeBody("C++ and café")).toBe("C++ and café");
+    expect(normalizeBody("  hello\nworld  ").body).toBe("hello\nworld");
+    expect(normalizeBody("C++ and café").body).toBe("C++ and café");
   });
 
   test("empty and whitespace-only bodies normalize away", () => {
-    expect(normalizeBody("   \n\t ")).toBe("");
-    expect(normalizeBody("")).toBe("");
+    expect(normalizeBody("   \n\t ").body).toBe("");
+    expect(normalizeBody("").body).toBe("");
+  });
+
+  test("truncation is reported by the writer, not inferred from length", () => {
+    const long = "y".repeat(MESSAGE_BODY_CAP + 500);
+    expect(normalizeBody(long).truncated).toBe(true);
+    expect(normalizeBody("short").truncated).toBe(false);
+    expect(normalizeBody("").truncated).toBe(false);
+  });
+
+  test("an emoji makes stored length disagree with the cap, which is why the flag exists", () => {
+    // slice() counts UTF-16 code units; SQLite's length() counts code points.
+    // A body of astral characters stores fewer characters than the cap, so
+    // `length(body) >= CAP` reads it as complete. It is not.
+    const astral = "😀".repeat(MESSAGE_BODY_CAP);
+    const { body, truncated } = normalizeBody(astral);
+    expect(truncated).toBe(true);
+    expect(body.length).toBe(MESSAGE_BODY_CAP);
+    expect([...body].length).toBeLessThan(MESSAGE_BODY_CAP);
+  });
+
+  test("the cap never splits a character", () => {
+    // Constructed so the cap lands exactly between the halves of a pair —
+    // the case a plain slice gets wrong, producing text that does not
+    // round-trip through UTF-8. The live corpus avoided this by luck.
+    const splitting = `${"a".repeat(MESSAGE_BODY_CAP - 1)}\u{1F600}tail`;
+    expect(splitting.slice(0, MESSAGE_BODY_CAP).charCodeAt(MESSAGE_BODY_CAP - 1)).toBeGreaterThanOrEqual(0xd800);
+    const { body, truncated } = normalizeBody(splitting);
+    expect(truncated).toBe(true);
+    const last = body.charCodeAt(body.length - 1);
+    expect(last >= 0xd800 && last <= 0xdbff).toBe(false);
+    expect(Buffer.from(body, "utf8").toString("utf8")).toBe(body);
   });
 
   test("bodies are capped", () => {
-    expect(normalizeBody("x".repeat(MESSAGE_BODY_CAP + 500))).toHaveLength(MESSAGE_BODY_CAP);
+    expect(normalizeBody("x".repeat(MESSAGE_BODY_CAP + 500)).body).toHaveLength(MESSAGE_BODY_CAP);
   });
 });

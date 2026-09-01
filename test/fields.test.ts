@@ -78,6 +78,6 @@ describe("truncation is visible", () => {
     expect(capped.length >= MESSAGE_BODY_CAP).toBe(true);
     expect(short.length >= MESSAGE_BODY_CAP).toBe(false);
     // normalizeBody is what produces the capped body in the first place.
-    expect(normalizeBody("y".repeat(MESSAGE_BODY_CAP + 5000)).length).toBe(MESSAGE_BODY_CAP);
+    expect(normalizeBody("y".repeat(MESSAGE_BODY_CAP + 5000)).body.length).toBe(MESSAGE_BODY_CAP);
   });
 });
