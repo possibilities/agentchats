@@ -6,20 +6,30 @@
  * than carrying migration code, and forever cheaper than a half-migrated
  * index that lies about what the sessions said.
  *
- * `messages_fts` is an external-content table: FTS5 keeps only the inverted
- * index and reads the text back through `messages`, which halves the space
- * a 500 MB corpus costs. The price is that FTS5 cannot see writes to the
- * content table on its own, so the three triggers below are load-bearing,
- * not boilerplate — without them the index silently drifts. Cascade deletes
+ * Both FTS tables are external-content: FTS5 keeps only the inverted index
+ * and reads the text back through the base table, which halves the space a
+ * 500 MB corpus costs. The price is that FTS5 cannot see writes to the
+ * content table on its own, so the six triggers below are load-bearing, not
+ * boilerplate — without them the index silently drifts. Cascade deletes
  * from `sessions` do fire the delete trigger (verified against SQLite
  * 3.51.0), which is what lets ingest replace a session with one DELETE.
+ *
+ * `sessions_fts` indexes metadata, not conversation: a session's title, the
+ * workspace it ran in, and the path of the transcript itself. That is what
+ * makes file archaeology work — "which sessions touched agentbrowse?"
+ * answers from the workspace and the filename even when no message body
+ * ever spells the word. Replaying real historical queries against a
+ * body-only index lost 110 documents to exactly this.
  */
 
 import { Database } from "bun:sqlite";
 import { rmSync } from "node:fs";
 import { ensureIndexDirectory, MEMORY_INDEX } from "./paths.ts";
 
-export const SCHEMA_VERSION = 1;
+/** 2 adds `sessions_fts`. An index written by version 1 has no metadata
+ * table to backfill, so it is discarded and rebuilt — which is the whole
+ * point of versioning a cache. */
+export const SCHEMA_VERSION = 2;
 
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS meta (
@@ -76,6 +86,30 @@ END;
 CREATE TRIGGER IF NOT EXISTS messages_au AFTER UPDATE ON messages BEGIN
   INSERT INTO messages_fts (messages_fts, rowid, body) VALUES ('delete', old.id, old.body);
   INSERT INTO messages_fts (rowid, body) VALUES (new.id, new.body);
+END;
+
+CREATE VIRTUAL TABLE IF NOT EXISTS sessions_fts USING fts5(
+  title,
+  workspace,
+  source_path,
+  content='sessions',
+  content_rowid='id',
+  tokenize='unicode61 remove_diacritics 2'
+);
+
+CREATE TRIGGER IF NOT EXISTS sessions_ai AFTER INSERT ON sessions BEGIN
+  INSERT INTO sessions_fts (rowid, title, workspace, source_path)
+  VALUES (new.id, new.title, new.workspace, new.source_path);
+END;
+CREATE TRIGGER IF NOT EXISTS sessions_ad AFTER DELETE ON sessions BEGIN
+  INSERT INTO sessions_fts (sessions_fts, rowid, title, workspace, source_path)
+  VALUES ('delete', old.id, old.title, old.workspace, old.source_path);
+END;
+CREATE TRIGGER IF NOT EXISTS sessions_au AFTER UPDATE ON sessions BEGIN
+  INSERT INTO sessions_fts (sessions_fts, rowid, title, workspace, source_path)
+  VALUES ('delete', old.id, old.title, old.workspace, old.source_path);
+  INSERT INTO sessions_fts (rowid, title, workspace, source_path)
+  VALUES (new.id, new.title, new.workspace, new.source_path);
 END;
 `;
 

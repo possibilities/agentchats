@@ -54,6 +54,7 @@ function hitJson(hit: SearchHit): Record<string, unknown> {
     session_id: hit.sessionId,
     ordinal: hit.ordinal,
     role: hit.role,
+    matched_on: hit.matchedOn,
   };
 }
 
@@ -270,16 +271,24 @@ async function commandSearch(argv: string[], env: Record<string, string | undefi
       });
       return EXIT.ok;
     }
-    const hits = search(db, {
+    const result = search(db, {
       query,
       limit: integer(parsed, "limit", 10),
       offset: integer(parsed, "offset", 0),
       ...scope,
-    }).map(hitJson);
+    });
+    const hits = result.hits.map(hitJson);
     const max = parsed.values["max-content-length"] === undefined
       ? undefined
       : integer(parsed, "max-content-length", 0);
-    emit({ query, count: hits.length, hits: truncate(project(hits, parsed.values["fields"]) as never, max) });
+    // `fallback` rides on the envelope so an agent can tell a widened answer
+    // from an exact one, and `matched_on` says which pass produced each row.
+    emit({
+      query,
+      count: hits.length,
+      fallback: result.fallback,
+      hits: truncate(project(hits, parsed.values["fields"]) as never, max),
+    });
     return EXIT.ok;
   } finally {
     db.close();

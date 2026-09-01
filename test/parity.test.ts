@@ -139,7 +139,7 @@ maybe("lexical parity against ground truth", () => {
       const misses: string[] = [];
       for (const [token, expected] of probes) {
         const found = new Set(
-          search(db, { query: token, limit: 50_000, offset: 0 }).map((hit) => hit.sourcePath),
+          search(db, { query: token, limit: 50_000, offset: 0 }).hits.map((hit) => hit.sourcePath),
         );
         for (const path of expected) {
           if (!found.has(path)) misses.push(`recall: "${token}" missed ${path}`);

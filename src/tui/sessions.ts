@@ -125,7 +125,7 @@ export function loadVisibleRows(
           })),
       };
     }
-    const hits = search(db, { query: request.query, limit: fetch, offset: 0, ...scope }).filter(keep);
+    const hits = search(db, { query: request.query, limit: fetch, offset: 0, ...scope }).hits.filter(keep);
     return { ok: true, rows: collapseToSessions(hits, request.limit) };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
