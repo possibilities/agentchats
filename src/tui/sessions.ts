@@ -75,52 +75,20 @@ function since(window: TimeWindow): string | undefined {
  * hiding a resumable session is worse than showing an extra one.
  */
 export function isAuxiliary(
-  row: { agent: string; thread_source: string | null; originator: string | null },
+  row: { agent: string; threadSource: string | null; originator: string | null },
   auxiliaryCodexOriginators: ReadonlySet<string>,
 ): boolean {
   if (row.agent !== "codex") return false;
-  if (row.thread_source === "user") return false;
-  if (row.thread_source !== null && row.thread_source !== "") return true;
+  if (row.threadSource === "user") return false;
+  if (row.threadSource !== null && row.threadSource !== "") return true;
   return row.originator !== null && auxiliaryCodexOriginators.has(row.originator);
 }
 
 /**
- * The classification metadata for a page of rows. Ingest recorded it, so the
- * picker reads two columns instead of the first 64 KB of every transcript —
- * the single biggest reason a listing repaints instantly now.
- */
-function classifications(
-  db: Database,
-  paths: readonly string[],
-): Map<string, { agent: string; thread_source: string | null; originator: string | null }> {
-  const found = new Map<string, { agent: string; thread_source: string | null; originator: string | null }>();
-  if (paths.length === 0) return found;
-  const rows = db
-    .query(
-      `select source_path, agent, thread_source, originator from sessions
-       where source_path in (${paths.map(() => "?").join(",")})`,
-    )
-    .all(...paths) as {
-    source_path: string;
-    agent: string;
-    thread_source: string | null;
-    originator: string | null;
-  }[];
-  for (const row of rows) {
-    found.set(row.source_path, {
-      agent: row.agent,
-      thread_source: row.thread_source,
-      originator: row.originator,
-    });
-  }
-  return found;
-}
-
-/**
  * One page of rows for the picker: ranked hits when there is a query, recent
- * sessions when there is not. Auxiliary suppression happens in the same pass
- * and is cheap now, so the old geometric refetch is gone — the query simply
- * asks for more than it shows.
+ * sessions when there is not. The classification rides on the row itself —
+ * ingest recorded it — so suppressing auxiliary sessions costs a predicate
+ * rather than the 64 KB transcript read per row it used to.
  */
 export function loadVisibleRows(
   db: Database,
@@ -135,10 +103,16 @@ export function loadVisibleRows(
   // Auxiliary rows are dropped after ranking, so ask for enough that hiding
   // them cannot empty a page the operator expected to be full.
   const fetch = request.includeAuxiliary ? request.limit : request.limit * 3;
+  const keep = (row: { agent: string; threadSource: string | null; originator: string | null }): boolean =>
+    request.includeAuxiliary || !isAuxiliary(row, auxiliaryCodexOriginators);
   try {
-    const raw: SessionRow[] =
-      request.query === ""
-        ? listSessions(db, { limit: fetch, ...scope }).map((session) => ({
+    if (request.query === "") {
+      return {
+        ok: true,
+        rows: listSessions(db, { limit: fetch, ...scope })
+          .filter(keep)
+          .slice(0, request.limit)
+          .map((session) => ({
             agent: session.agent,
             workspace: session.workspace,
             path: session.path,
@@ -148,16 +122,11 @@ export function loadVisibleRows(
             line: null,
             slug: null,
             excerpt: null,
-          }))
-        : collapseToSessions(search(db, { query: request.query, limit: fetch, offset: 0, ...scope }));
-
-    if (request.includeAuxiliary) return { ok: true, rows: raw.slice(0, request.limit) };
-    const meta = classifications(db, raw.map((row) => row.path));
-    const rows = raw.filter((row) => {
-      const found = meta.get(row.path);
-      return found === undefined || !isAuxiliary(found, auxiliaryCodexOriginators);
-    });
-    return { ok: true, rows: rows.slice(0, request.limit) };
+          })),
+      };
+    }
+    const hits = search(db, { query: request.query, limit: fetch, offset: 0, ...scope }).filter(keep);
+    return { ok: true, rows: collapseToSessions(hits, request.limit) };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }
@@ -166,7 +135,7 @@ export function loadVisibleRows(
 /** A session matching in ten places is still one session: the picker picks
  * sessions, and the first hit per path is its best-ranked one, so the
  * collapse preserves the ranking. */
-function collapseToSessions(hits: readonly SearchHit[]): SessionRow[] {
+function collapseToSessions(hits: readonly SearchHit[], limit: number): SessionRow[] {
   const seen = new Set<string>();
   const rows: SessionRow[] = [];
   for (const hit of hits) {
@@ -183,6 +152,7 @@ function collapseToSessions(hits: readonly SearchHit[]): SessionRow[] {
       slug: null,
       excerpt: null,
     });
+    if (rows.length >= limit) break;
   }
   return rows;
 }
