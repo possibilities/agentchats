@@ -46,7 +46,11 @@ export interface SnippetMarks {
   tokens: number;
 }
 
-const DEFAULT_MARKS: SnippetMarks = { start: "[", end: "]", ellipsis: " … ", tokens: 20 };
+/** 48 of the 64 tokens FTS5 permits. The cited message averages about 4,200
+ * characters and a 20-token window showed 145 of them — 3.4%. Widening to 48
+ * roughly doubles that and measured free: ten snippets cost the same either
+ * way, because the work is finding the match, not rendering it. */
+const DEFAULT_MARKS: SnippetMarks = { start: "[", end: "]", ellipsis: " … ", tokens: 48 };
 
 /** Which pass produced a hit. Scores are comparable within one kind and
  * meaningless across kinds. */
@@ -313,6 +317,21 @@ const MESSAGE_JOIN = `FROM messages_fts
  * tail of the ranking is never seen. Measured: ten message hits used to yield
  * a mean of 4.91 distinct sessions, and 45.5% of pages showed fewer than five.
  */
+/**
+ * How far below a session's best score a prose message may sit and still be
+ * shown as its citation. bm25 is negative and lower is better, so this is an
+ * absolute score distance.
+ *
+ * Swept against real queries — prose share of citations against the mean
+ * score given up to get it: 0 → 10.7% / 0.000, 1.0 → 15.3% / 0.024,
+ * 2.0 → 21.4% / 0.109, 5.0 → 30.4% / 0.404, unbounded → 40.2% / 1.264.
+ * Two doubles the prose for a tenth the penalty of always preferring it, and
+ * keeps the guarantee that matters: a citation is only swapped for one that
+ * matched nearly as well, so a query whose real answer is a stack trace
+ * still gets the stack trace.
+ */
+const CITATION_BAND = 2.0;
+
 function poolSize(need: number): number {
   // Scales with what was asked for, so a caller wanting a deep page pays for
   // the depth rather than silently getting a shallow one. The ceiling only
@@ -351,7 +370,8 @@ function messageMatches(
   const picked = db
     .query(
       `WITH pool AS MATERIALIZED (
-         SELECT messages.id AS mid, messages.session_id AS sid, bm25(messages_fts) AS s
+         SELECT messages.id AS mid, messages.session_id AS sid, messages.role AS role,
+                bm25(messages_fts) AS s
          FROM messages_fts
          JOIN messages ON messages.id = messages_fts.rowid
          JOIN sessions ON sessions.id = messages.session_id
@@ -360,10 +380,23 @@ function messageMatches(
          LIMIT $pool
        ),
        agg AS (SELECT sid, MIN(s) AS best, COUNT(*) AS n FROM pool GROUP BY sid),
+       scored AS (SELECT mid, sid, role, s, MIN(s) OVER (PARTITION BY sid) AS sbest FROM pool),
        best AS (
          SELECT mid, sid FROM (
-           SELECT mid, sid, ROW_NUMBER() OVER (PARTITION BY sid ORDER BY s ASC, mid ASC) AS rn
-           FROM pool
+           SELECT mid, sid, ROW_NUMBER() OVER (
+             PARTITION BY sid
+             -- Which message to show, once the session has been chosen. bm25
+             -- favours long repetitive tool output, so 82% of citations were
+             -- machine text and 28% of them hid a human or assistant sentence
+             -- matching the same query. Prefer prose when it scored within
+             -- $band of the session's best; outside that band the tool output
+             -- really is the better evidence and still wins. Ranking is
+             -- untouched — the session was already chosen.
+             ORDER BY CASE WHEN role IN ('user', 'assistant') AND s <= sbest + $band
+                           THEN 0 ELSE 1 END,
+                      s ASC, mid ASC
+           ) AS rn
+           FROM scored
          ) WHERE rn = 1
        )
        SELECT best.mid AS mid, agg.best AS best, agg.n AS n
@@ -374,7 +407,13 @@ function messageMatches(
                 sessions.updated_at DESC, sessions.id ASC
        LIMIT $limit`,
     )
-    .all({ $match: match, $limit: limit, $pool: poolSize(limit), ...filters.bindings }) as {
+    .all({
+      $match: match,
+      $limit: limit,
+      $pool: poolSize(limit),
+      $band: CITATION_BAND,
+      ...filters.bindings,
+    }) as {
     mid: number;
     best: number;
     n: number;
