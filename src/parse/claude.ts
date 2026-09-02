@@ -15,6 +15,7 @@
  */
 
 import { Buffer } from "node:buffer";
+import { isSelfInvocation } from "./self-invocation.ts";
 import {
   normalizeBody,
   type ParsedMessage,
@@ -111,9 +112,6 @@ interface Candidate {
  * A subcommand is required, so a sentence discussing agentchats is not
  * mistaken for an invocation of it.
  */
-const SELF_INVOCATION =
-  /\b(?:agentchats|cass)\s+(?:search|sessions|state|view|expand|resume|index|status|triage|pack)\b/;
-
 function blockCandidate(
   block: Record<string, unknown>,
   recordRole: Role,
@@ -128,7 +126,7 @@ function blockCandidate(
       const input = block["input"];
       const rendered = input === undefined ? "" : (JSON.stringify(input) ?? "");
       const body = `${asString(block["name"])} ${rendered}`;
-      if (SELF_INVOCATION.test(body)) {
+      if (isSelfInvocation(body, input)) {
         selfCalls.add(asString(block["id"]));
         return null;
       }

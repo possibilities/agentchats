@@ -15,6 +15,7 @@
  */
 
 import { Buffer } from "node:buffer";
+import { isSelfInvocation } from "./self-invocation.ts";
 import {
   normalizeBody,
   type ParsedMessage,
@@ -132,9 +133,6 @@ interface Candidate {
 /** Shared with the Claude reader: a command that runs this tool, or the one
  * it replaced. See the note in claude.ts for why its output must not be
  * indexed. */
-const SELF_INVOCATION =
-  /\b(?:agentchats|cass)\s+(?:search|sessions|state|view|expand|resume|index|status|triage|pack)\b/;
-
 function payloadCandidate(
   payload: Record<string, unknown>,
   selfCalls: Set<string>,
@@ -159,7 +157,7 @@ function payloadCandidate(
       // arrive already serialized.
       const argument = asString(payload["input"]) || asString(payload["arguments"]);
       const body = `${asString(payload["name"])} ${argument}`;
-      if (SELF_INVOCATION.test(body)) {
+      if (isSelfInvocation(body, argument)) {
         selfCalls.add(asString(payload["call_id"]));
         return null;
       }

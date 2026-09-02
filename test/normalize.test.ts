@@ -154,6 +154,55 @@ describe("the index does not index itself", () => {
     expect(bodies.some((b) => b.includes("src/handoff.ts"))).toBe(true);
   });
 
+  test("a command after a line break and its output are skipped in both formats", () => {
+    const command = 'echo ready\nagentchats search "handoff-import" --json';
+    const claude = parseClaude(
+      [
+        call("t1", command),
+        result("t1", '{"hits":[{"snippet":"handoff-import"}]}'),
+        call("t2", "echo unrelated"),
+        result("t2", "unrelated output"),
+      ].join("\n"),
+      "/Users/x/.claude/projects/p/s.jsonl",
+    );
+    expect(claude).not.toBeNull();
+    expect(claude!.messages.map((message) => message.body)).toEqual([
+      'Bash {"command":"echo unrelated"}',
+      "unrelated output",
+    ]);
+
+    const codexRecord = (payload: Record<string, unknown>) =>
+      JSON.stringify({
+        type: "response_item",
+        timestamp: "2026-09-01T00:00:00.000Z",
+        payload,
+      });
+    const codex = parseCodex(
+      [
+        codexRecord({
+          type: "function_call",
+          call_id: "c1",
+          name: "exec_command",
+          arguments: JSON.stringify({ cmd: command }),
+        }),
+        codexRecord({ type: "function_call_output", call_id: "c1", output: "handoff-import" }),
+        codexRecord({
+          type: "function_call",
+          call_id: "c2",
+          name: "exec_command",
+          arguments: JSON.stringify({ cmd: "echo unrelated" }),
+        }),
+        codexRecord({ type: "function_call_output", call_id: "c2", output: "unrelated output" }),
+      ].join("\n"),
+      "/Users/x/.codex/sessions/2026/09/01/rollout-2026-09-01T00-00-00-019fc538-de47-7012-87dd-31ca0fe9890a.jsonl",
+    );
+    expect(codex).not.toBeNull();
+    expect(codex!.messages.map((message) => message.body)).toEqual([
+      'exec_command {"cmd":"echo unrelated"}',
+      "unrelated output",
+    ]);
+  });
+
   test("prose about the tool is still indexed", () => {
     // Only an invocation is dropped. A conversation discussing agentchats is
     // exactly the history someone will search for later.
