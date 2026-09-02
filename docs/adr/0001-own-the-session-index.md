@@ -39,3 +39,9 @@ semantic search, raw mirror, archive, and export are given up deliberately.
 Retention comes from mirroring the live stores rather than keeping an
 independently retained copy, which also removes the need for the monthly
 index reset cass required.
+
+The replacement retains aggregate counts by agent, workspace, and date. It
+does not recreate cass's cross-session `context` relationship: observed use
+was uncommon, cass's implementation was slow, and the dominant archaeology
+workflow is covered by ranked search followed by `view` or `expand`. A future
+relationship model needs new usage evidence rather than compatibility alone.
