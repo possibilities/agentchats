@@ -194,7 +194,7 @@ agentchats search "" --json --days 7 --aggregate date,agent
 |---|---|---|
 | 0 | success | parse stdout |
 | 1 | error | read `hint` on stderr, act on it |
-| 3 | index holds nothing — `search`/`sessions`/`view` only | `agentchats index` |
+| 3 | index holds nothing — `search`/`sessions`/`view`/`expand` only | `agentchats index` |
 | 64 | usage error | fix the invocation per `hint` |
 
 ## Environment and layout

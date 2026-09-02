@@ -142,10 +142,6 @@ export interface IndexStatus {
   agents: { agent: string; sessions: number; messages: number }[];
 }
 
-/** Below this many exact message hits, a multi-term query is worth widening
- * to session scope. Above it the user has enough to read and a widened list
- * would only bury the exact answers. */
-
 const OPERATORS = new Set(["AND", "OR", "NOT"]);
 
 /** A term FTS5 will accept for any text at all, or null when the text holds
