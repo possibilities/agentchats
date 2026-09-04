@@ -7,7 +7,7 @@ export interface ProjectChoice {
   display: string;
 }
 
-export const DEFAULT_PROJECT_ROOTS = ["~/code", "~/src"] as const;
+export const DEFAULT_PROJECT_ROOTS = ["~/code", "~/source"] as const;
 
 export function projectDisplayPath(path: string, home: string): string {
   if (path === home) return "~";

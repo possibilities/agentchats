@@ -79,7 +79,7 @@ Search starts in the current git project (or cwd outside Git). The project row
 beneath the search field makes that scope a first-class control: Tab focuses
 it, Space or Enter opens its fuzzy chooser, and the arrows step through its
 values. The chooser offers all projects, the opening project, then `~/code`
-and `~/src` one level deep—the same bounded, transcript-independent discovery
+and `~/source` one level deep—the same bounded, transcript-independent discovery
 rule as AgentLaunch. Ctrl+g still toggles between the selected project and all
 projects, and **choose project** remains in the ctrl+k palette.
 
