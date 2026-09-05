@@ -1,0 +1,13 @@
+{
+  "inputs": [
+    "scripts/install.sh",
+    "scripts/run-with-timeout",
+    "bin/agentchats",
+    "scripts/check-static.sh",
+    "scripts/install-hooks.sh"
+  ],
+  "command": [
+    "bash",
+    "scripts/check-static.sh"
+  ]
+}

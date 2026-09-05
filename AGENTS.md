@@ -81,6 +81,12 @@ synchronization path here.
 
 ## After changing this repository
 
+- Before pushing: `python3 .githooks/pre-push --check` runs CI's shell syntax
+  and ShellCheck checks without loading the app or indexing sessions. Install
+  the exact-commit hook once with `scripts/install-hooks.sh` from the canonical
+  checkout. All worktrees share it; all opted-in repos share one per-user lock
+  (15-second wait, 30-second checking deadline). It requires Python 3.9+, Bash,
+  and ShellCheck, performs no installs, and retains existing hooks.
 - `src/parse/`, `src/store/`, or `src/cli/` changes: `bun test` and
   `bunx tsc --noEmit` here, then `./bin/agentchats index` against a real
   `HOME` to confirm ingest still runs end-to-end. The

@@ -1,0 +1,192 @@
+#!/usr/bin/env python3
+"""Bounded static checks, shared by CI, manual checks, and Git pre-push.
+
+Only Python's standard library is loaded. All opted-in repositories use the
+same per-user kernel lock; waiting never launches another checker. Repository
+policy lives in checks.json and its small, reviewed static-check command.
+"""
+import fcntl
+import io
+import json
+import os
+from pathlib import Path
+import signal
+import subprocess
+import sys
+import tarfile
+import tempfile
+import time
+
+WAIT_SECONDS = 15
+RUN_SECONDS = 30
+MAX_BYTES = 8 * 1024 * 1024
+MAX_FILES = 512
+POLICY = ".githooks/checks.json"
+LOCK_FD = None
+
+
+def run(args, *, cwd=None, capture=False, deadline=None):
+    timeout = max(0.01, deadline - time.monotonic()) if deadline else RUN_SECONDS
+    # Git hook environment must not redirect a snapshot's commands to the live
+    # repository or index. Git reads below still run from the invoking worktree.
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    with subprocess.Popen(args, cwd=cwd, env=env, start_new_session=True,
+                          stdin=subprocess.DEVNULL,
+                          pass_fds=() if LOCK_FD is None else (LOCK_FD,),
+                          stdout=subprocess.PIPE if capture else None) as child:
+        try:
+            output, _ = child.communicate(timeout=timeout)
+        except BaseException:
+            os.killpg(child.pid, signal.SIGKILL)
+            child.wait()
+            raise
+        if child.returncode:
+            raise RuntimeError(f"{args[0]} exited {child.returncode}")
+        return output
+
+
+def policy(data):
+    value = json.loads(data)
+    if (set(value) != {"inputs", "command"} or
+            not isinstance(value["inputs"], list) or not value["inputs"] or
+            not isinstance(value["command"], list) or not value["command"]):
+        raise RuntimeError(f"invalid {POLICY}")
+    for name in value["inputs"]:
+        if not isinstance(name, str) or name.startswith(("/", ":", "-")) or ".." in Path(name).parts:
+            raise RuntimeError(f"invalid snapshot input: {name}")
+    if not all(isinstance(arg, str) for arg in value["command"]):
+        raise RuntimeError("static command must be an argument list")
+    return value
+
+
+def snapshot(revision, target, deadline):
+    spec = policy(run(["git", "show", f"{revision}:{POLICY}"],
+                      capture=True, deadline=deadline))
+    paths = list(dict.fromkeys([POLICY, *spec["inputs"]]))
+    listing = run(["git", "ls-tree", "-rlz", revision, "--", *paths],
+                  capture=True, deadline=deadline)
+    entries = [entry for entry in listing.split(b"\0") if entry]
+    total = 0
+    for entry in entries:
+        metadata, _ = entry.split(b"\t", 1)
+        mode, kind, _, size = metadata.split()
+        if kind != b"blob" or mode not in (b"100644", b"100755", b"120000"):
+            raise RuntimeError("snapshot inputs must be files, not submodules")
+        total += int(size)
+    if total > MAX_BYTES or len(entries) > MAX_FILES:
+        raise RuntimeError("static snapshot exceeds 8 MiB or 512 files; narrow its inputs")
+    archive = run(["git", "archive", "--format=tar", revision, "--", *paths],
+                  capture=True, deadline=deadline)
+    # Extract regular files ourselves. Do not follow archive links or allow a
+    # checker snapshot to write outside its temporary directory.
+    links = []
+    with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
+        for member in tar:
+            relative = Path(member.name)
+            if relative.is_absolute() or ".." in relative.parts:
+                raise RuntimeError("unsafe snapshot path")
+            dest = target / relative
+            if member.isdir():
+                dest.mkdir(parents=True, exist_ok=True)
+            elif member.isfile():
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                with tar.extractfile(member) as source:
+                    dest.write_bytes(source.read())
+                dest.chmod(member.mode & 0o777)
+            elif member.issym():
+                links.append((dest, member.linkname))
+            else:
+                raise RuntimeError("unsupported snapshot entry")
+    for dest, link in links:
+        resolved = (dest.parent / link).resolve()
+        if not resolved.is_relative_to(target):
+            raise RuntimeError("snapshot symlink escapes its inputs")
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.symlink_to(link)
+    return spec
+
+
+def acquire(lock, seconds=WAIT_SECONDS):
+    until = time.monotonic() + seconds
+    while True:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return
+        except BlockingIOError:
+            if time.monotonic() >= until:
+                raise RuntimeError("another static checker is busy; retry the push (no checks were skipped)")
+            time.sleep(min(0.1, max(0, until - time.monotonic())))
+
+
+def revisions(lines):
+    result = []
+    for line in lines:
+        parts = line.split()
+        if len(parts) != 4:
+            raise RuntimeError("invalid Git pre-push input")
+        _, sha, _, _ = parts
+        if set(sha) == {"0"}:  # A deletion has no tree to check.
+            continue
+        if len(sha) not in (40, 64) or any(c not in "0123456789abcdef" for c in sha):
+            raise RuntimeError("invalid pushed object ID")
+        if sha not in result:
+            result.append(sha)
+        if len(result) > 16:
+            raise RuntimeError("push exceeds 16 distinct tips; split it into smaller pushes")
+    return result
+
+
+def main():
+    global LOCK_FD
+
+    def interrupted(_signal, _frame):
+        raise KeyboardInterrupt
+
+    for sig in (signal.SIGTERM, signal.SIGHUP):
+        signal.signal(sig, interrupted)
+    args = sys.argv[1:]
+    working = args == ["--check"]
+    if working:
+        tips = [None]
+    elif len(args) == 2 and args[0] == "--revision":
+        tips = [args[1]]
+    elif len(args) == 2 and not args[0].startswith("--"):
+        tips = revisions(sys.stdin)
+    else:
+        raise RuntimeError("usage: pre-push --check | --revision COMMIT | REMOTE URL (Git hook)")
+    if not tips:
+        return
+    # Stable across repositories and worktrees. Never unlink a kernel lock:
+    # replacing the inode would let two processes both believe they own it.
+    lock_dir = Path.home() / ".cache" / "local-static-checks"
+    lock_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    with (lock_dir / "lock").open("a") as lock:
+        acquire(lock)
+        # Children retain the lock even if this parent is forcibly killed.
+        LOCK_FD = lock.fileno()
+        deadline = time.monotonic() + RUN_SECONDS
+        for tip in tips:
+            if tip is None:
+                root = Path(run(["git", "rev-parse", "--show-toplevel"],
+                                capture=True, deadline=deadline).decode().strip())
+                spec = policy((root / POLICY).read_bytes())
+                run(spec["command"], cwd=root, deadline=deadline)
+            else:
+                commit = run(["git", "rev-parse", "--verify", f"{tip}^{{commit}}"],
+                             capture=True, deadline=deadline).decode().strip()
+                print(f"Static checks: {commit[:12]}", flush=True)
+                with tempfile.TemporaryDirectory(prefix="static-check-") as temp:
+                    root = Path(temp).resolve()
+                    spec = snapshot(commit, root, deadline)
+                    run(spec["command"], cwd=root, deadline=deadline)
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("pre-push: interrupted; checks did not complete", file=sys.stderr)
+        sys.exit(1)
+    except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as error:
+        print(f"pre-push: {error}", file=sys.stderr)
+        sys.exit(1)

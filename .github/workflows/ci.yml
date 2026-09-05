@@ -31,10 +31,8 @@ jobs:
       - name: Install dependencies
         run: bun install
 
-      - name: Validate shell
-        run: |
-          bash -n scripts/install.sh scripts/run-with-timeout bin/agentchats
-          shellcheck --severity=warning --shell=bash scripts/install.sh scripts/run-with-timeout bin/agentchats
+      - name: Validate shell (same as pre-push)
+        run: python3 .githooks/pre-push --check
 
       - name: Test installer timeout handling
         run: node --test test/run-with-timeout.node.mjs
