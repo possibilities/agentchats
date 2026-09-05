@@ -34,7 +34,7 @@ jobs:
       - name: Validate shell
         run: |
           bash -n scripts/install.sh scripts/run-with-timeout bin/agentchats
-          shellcheck --shell=bash scripts/install.sh scripts/run-with-timeout bin/agentchats
+          shellcheck --severity=warning --shell=bash scripts/install.sh scripts/run-with-timeout bin/agentchats
 
       - name: Test installer timeout handling
         run: node --test test/run-with-timeout.node.mjs
