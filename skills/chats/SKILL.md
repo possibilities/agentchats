@@ -1,6 +1,10 @@
 ---
 name: chats
-description: Search past Claude Code and Codex sessions on this machine with the agentchats CLI — a local SQLite+FTS5 index of session transcripts, searchable offline. Use when an error, bug, or decision feels previously seen; when the user references a past session, conversation, or chat ("we did this before", "find that session where…"); when resuming or reconstructing context for a workspace; or before re-deriving anything a past session may already contain.
+description: >-
+  Find past Claude Code and Codex conversations with agentchats. Use to
+  recover previous decisions, debugging work, or session context and inspect
+  exact transcript evidence; use brain for saved articles and wiki for
+  authored documents.
 ---
 
 # Chats — search past coding-agent sessions
