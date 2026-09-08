@@ -83,7 +83,7 @@ When live and archived copies overlap, the live source wins. Archive setup is
 an operator configuration choice; search does not require changing it.
 
 Recorded AgentChats invocations and their tool output are excluded from the
-index, including direct MCP and literal Executor calls, so a search does not
+index, including direct MCP and historical aggregator calls, so a search does not
 rank its own prior excerpts. Ordinary conversation about the tool remains.
 
 ## Operator and installation paths

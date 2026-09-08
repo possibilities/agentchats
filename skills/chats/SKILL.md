@@ -16,10 +16,10 @@ Native file tools remain useful for investigating an exact source record.
 
 ## Discover and call
 
-Read Executor's own `skills({name:"execute"})` for its current calling workflow.
-Inside `execute`, discover `tools.search({namespace:"agentchats"})`, inspect
-`tools.describe.tool({path})`, then call `tools[path](args)` with that returned
-full path. Follow `hasMore` and `nextOffset` for further discovery pages.
+Use the `agentchats` MCP server directly. Select the tool from the harness's
+catalog or tool search, inspect its input schema, and call it with JSON
+arguments. The host may prefix tool names with the server name. `guide`
+provides the installed command contract and recovery guidance.
 The installed `guide` provides current parameters and result contracts.
 
 For project bearings, call `state` with an explicit absolute `workspace` and a
@@ -67,11 +67,10 @@ For query syntax, field choices, recipes, and storage behavior, read
 Most tools preserve their existing command-specific JSON object in
 `structuredContent` and standalone JSON text; they have no common success
 wrapper. `guide` alone returns the fleet `{schema_version,ok,error,data}`
-envelope, and `state` stays plain text. Inspect the inner MCP result inside
-Executor's success wrapper.
+envelope, and `state` stays plain text. Inspect each tool's native result.
 
-For a failed call, parse the standalone JSON in `error.details.content`:
-Executor may omit structured error data. The original error object is
+For a failed call, inspect MCP `isError` and `structuredContent`, or parse
+the standalone JSON text block if the host omits structured data. The error is
 `{error:{code,message,hint}}`. A failed index pass instead keeps its native
 `success:false` report and failure details. Diagnostic prose is separate.
 `missing-index` calls for an incremental refresh; `not-found` calls for checking

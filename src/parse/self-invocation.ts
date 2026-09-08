@@ -3,7 +3,7 @@
 const SELF_INVOCATION =
   /\b(?:agentchats|cass)\s+(?:search|sessions|state|view|expand|resume|index|status|guide|triage|pack)\b/;
 
-// The normal native-MCP and discovered Executor call spellings. Test calls,
+// Native MCP and historical aggregator call spellings. Test calls,
 // not mentions of the integration, so unrelated discovery and prose survive.
 const SELF_NATIVE_MCP = /\bmcp__agentchats__(?:search|sessions|state|view|expand|resume|index|status|guide)\b/;
 const SELF_EXECUTOR = /\btools\s*(?:\[\s*["'](?:tools\.)?agentchats\.[\w-]+\.[\w-]+\.(?:search|sessions|state|view|expand|resume|index|status|guide)["']\s*\]|\.agentchats\.[\w-]+\.[\w-]+\.(?:search|sessions|state|view|expand|resume|index|status|guide))\s*\(/;

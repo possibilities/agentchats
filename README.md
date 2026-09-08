@@ -21,7 +21,7 @@ Three pieces do that:
   `--json` is the Signal Room resume picker (`src/tui/`, bun + OpenTUI).
   `agentchats mcp` serves the same typed producer handlers over stdio.
 - **The `chats` skill.** `skills/chats/SKILL.md` is a runbook that teaches
-  agents to use MCP through Executor: freshness, the search → view/expand → resume
+  agents to use MCP through the directly connected MCP server: freshness, the search → view/expand → resume
   drill-down loop, query language, token budgeting, and recovery.
 
 ## Installation
@@ -48,7 +48,7 @@ behind.
 
 ## MCP for agents
 
-AgentStart registers `agentchats mcp` with Executor. The nine tools are `index`,
+AgentStart supplies `agentchats mcp` directly to managed harness sessions. The nine tools are `index`,
 `status`, `search`, `sessions`, `view`, `expand`, `resume`, `state`, and `guide`.
 Their arguments and terminal help derive from `src/cli/contract.ts`; MCP calls
 the shared handlers directly without shell commands or stdout capture.

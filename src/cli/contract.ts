@@ -147,7 +147,7 @@ export const CONTRACT = {
     name: "agentchats", version: packageInfo.version, audience: "agent",
     purpose: "Search and reread local Claude Code and Codex transcripts through a derived SQLite index.",
   },
-  guidance: "Use Chats when prior decisions, debugging, or session context are relevant. Agents discover its MCP tools through Executor. Search bounded excerpts, then read exact source citations. The index is derived and can be stale; inspect status when freshness matters and refresh incrementally when needed. Native filesystem tools remain useful for exact source investigation. The operator CLI and human resume picker remain available.",
+  guidance: "Use Chats when prior decisions, debugging, or session context are relevant. Agents discover its MCP tools through the directly connected MCP server. Search bounded excerpts, then read exact source citations. The index is derived and can be stale; inspect status when freshness matters and refresh incrementally when needed. Native filesystem tools remain useful for exact source investigation. The operator CLI and human resume picker remain available.",
   concepts: {
     model: {
       scope: "Only Claude Code and Codex transcripts, plus explicitly configured archives. Live copies win over archived duplicates. Unavailable roots retain their indexed sessions.",
