@@ -17,6 +17,40 @@ import {
 } from "../src/store/query.ts";
 import { openIndex, SCHEMA_VERSION, storedSchemaVersion } from "../src/store/schema.ts";
 
+test("cancelled reads cannot prune an unfinished pass, and a later pass can finish", async () => {
+  const root = mkdtempSync(join(tmpdir(), "agentchats-cancel-"));
+  const db = openIndex(join(root, "index.db"));
+  const store = join(root, "transcripts");
+  mkdirSync(store);
+  const a = join(store, "a.jsonl");
+  const b = join(store, "b.jsonl");
+  writeFileSync(a, "a");
+  writeFileSync(b, "b");
+  const parse = (_text: string, path: string) => parsed({ sourcePath: path, sessionId: path });
+  const options = { roots: [store], parsers: { claude_code: { root: store, parse, read: async (path: string) => path } } };
+  try {
+    await ingest(db, options);
+    rmSync(a);
+    writeFileSync(b, "changed");
+    const controller = new AbortController();
+    let reading!: () => void;
+    const started = new Promise<void>((resolve) => { reading = resolve; });
+    const running = ingest(db, {
+      ...options,
+      signal: controller.signal,
+      parsers: { claude_code: { root: store, parse, read: async () => { reading(); return await new Promise<string>(() => {}); } } },
+    });
+    await started;
+    controller.abort(new Error("cancelled fixture"));
+    await expect(running).rejects.toThrow("cancelled fixture");
+    expect((db.query("select count(*) as count from sessions").get() as { count: number }).count).toBe(2);
+    expect((await ingest(db, options)).removed).toBe(1);
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 const temp = mkdtempSync(join(tmpdir(), "agentchats-store-"));
 afterAll(() => rmSync(temp, { recursive: true, force: true }));
 

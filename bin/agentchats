@@ -27,54 +27,6 @@ die() {
     exit 1
 }
 
-usage() {
-    cat <<'EOF'
-Usage: agentchats <command> [options]
-
-Search and re-read this machine's Claude Code and Codex session history from
-a local SQLite index over the live transcript stores.
-
-Commands:
-  state      Budget-capped bearings dump of recent sessions for one workspace
-  search     Live-search sessions in a full-screen picker, or with --json,
-             ranked hits for an agent to read
-  sessions   Recent sessions as JSON
-  view       Print one message, cited by source path and line
-  expand     Print the messages around one hit
-  resume     Print the native resume command for a session
-  index      Build or incrementally refresh the index
-  status     Index schema, counts, size, and freshness
-
-Options (state):
-  --workspace <dir>   Project directory (default: the current git project)
-  --budget <tokens>   Approximate output budget (default: 400, ~4 chars/token)
-
-Options (search, picker):
-  --workspace <dir>   Project directory (default: the current git project)
-  --include-auxiliary Include app-server, realtime, and child Codex threads
-
-Options (search, --json):
-  --limit N --offset N --workspace <dir> --agent claude_code|codex
-  --days N --since <when> --until <when>
-  --fields minimal|summary|<csv>  --max-content-length N
-  --aggregate agent,workspace,date
-
-Options (index):
-  --full              Discard the index and rebuild from the live stores
-  --retain-days N     Also drop sessions older than N days
-
-The index is derived state at ~/.local/state/agentchats/index.db. Deleting it
-loses nothing but the time to run `agentchats index` again.
-EOF
-}
-
-case "${1:-}" in
-    -h|--help|'')
-        usage
-        exit 0
-        ;;
-esac
-
 command -v bun >/dev/null 2>&1 \
     || die "agentchats needs bun; install it with AgentStart"
 

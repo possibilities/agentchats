@@ -10,7 +10,8 @@ the whole path from transcript to search result, and nothing else:
 - `src/store/` — the SQLite+FTS5 schema, ingest (parse, normalize, write;
   incremental and retention-aware), and the query layer search reads from.
 - `src/cli/` — the `agentchats` command surface: `index`, `status`,
-  `search`, `sessions`, `view`, `expand`, `resume`, `state`.
+  `search`, `sessions`, `view`, `expand`, `resume`, `state`, and `guide`, plus
+  the in-process stdio MCP adapter.
 - `src/tui/` — the Signal Room resume picker (bun + OpenTUI) behind
   `agentchats search` with no `--json`.
 - `scripts/install.sh` — links the `agentchats` CLI into `~/.local/bin` and
@@ -38,9 +39,8 @@ synchronization path here.
   a `die` helper, `--check` prints the plan without changing the system.
   A machine without this checkout is a skip inside AgentStart, not a failure;
   a present checkout that fails to install is a real error and propagates.
-- The installer links the CLI, installs dependencies only when
-  `node_modules/@opentui/core` is missing (bun's marker for "already
-  installed"), then builds or refreshes the index through the newly linked
+- The installer resolves the complete frozen dependency lockfile before
+  linking the CLI, then builds or refreshes the index through the newly linked
   CLI — every step idempotent, so a rerun after a failure just resumes.
 - The index prepares incrementally when healthy and rebuilds fully via
   `agentchats index --full` when missing, unhealthy, or after a failed
@@ -54,6 +54,12 @@ synchronization path here.
   real command output. After a change to `src/cli/` changes command
   behavior, reverify the skill's claims against the live CLI before
   editing prose.
+- `src/cli/contract.ts` owns producer arguments and rendered help. MCP maps
+  those arguments into the same typed handlers as the CLI, preserving the
+  existing command-specific JSON, error objects, and Markdown. Keep stdout
+  exclusively JSON-RPC in MCP mode. Test cancellation, progress, and unforced
+  EOF shutdown when changing ingestion or the transport. The operator picker
+  keeps its own terminal grammar; MCP must never launch it.
 - `agentchats state` follows the shared `agent*` state-dump contract:
   scoped to one workspace, bounded by `--budget` (approximate tokens),
   fast, offline, read-only, markdown a model reads directly, and silent

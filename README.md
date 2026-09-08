@@ -14,13 +14,14 @@ Three pieces do that:
   local SQLite+FTS5 database at `~/.local/state/agentchats/index.db`.
   `agentchats index` builds or refreshes it — incremental by default,
   `--full` to rebuild from nothing.
-- **The `agentchats` CLI.** `bin/agentchats`, linked editable into
+- **The `agentchats` command and MCP surface.** `bin/agentchats`, linked editable into
   `~/.local/bin` by the installer. `state` prints a budget-capped bearings
   dump for agents re-orienting in a project; `search`, `sessions`, `view`,
   `expand`, and `resume` are the query surface; bare `search` with no
   `--json` is the Signal Room resume picker (`src/tui/`, bun + OpenTUI).
+  `agentchats mcp` serves the same typed producer handlers over stdio.
 - **The `chats` skill.** `skills/chats/SKILL.md` is a runbook that teaches
-  agents to wield the CLI: preflight, the search → view/expand → resume
+  agents to use MCP through Executor: freshness, the search → view/expand → resume
   drill-down loop, query language, token budgeting, and recovery.
 
 ## Installation
@@ -38,12 +39,32 @@ scripts/install.sh --check     # print the plan without changing anything
 ~/code/agentstart/scripts/sync-skills   # refresh the common capability pack
 ```
 
-The installer links the CLI, installs dependencies only when
-`node_modules/@opentui/core` is missing, then builds or refreshes the index
+The installer resolves the complete frozen dependency lockfile before linking
+the CLI, then builds or refreshes the index
 through the newly linked CLI. Index-building subprocesses are time-bounded
 (`scripts/run-with-timeout`) and reaped on timeout or installer termination,
 so a stuck rebuild cannot hang AgentStart or leave an orphaned process
 behind.
+
+## MCP for agents
+
+AgentStart registers `agentchats mcp` with Executor. The nine tools are `index`,
+`status`, `search`, `sessions`, `view`, `expand`, `resume`, `state`, and `guide`.
+Their arguments and terminal help derive from `src/cli/contract.ts`; MCP calls
+the shared handlers directly without shell commands or stdout capture.
+
+Existing JSON objects remain unchanged in both `structuredContent` and a
+standalone JSON text block. Errors set `isError` and retain
+`{error:{code,message,hint}}`; an incomplete index pass retains its native
+`success:false` report. The new `guide` uses the fleet guide envelope, and
+`state` remains plain Markdown with empty output for an empty workspace.
+
+MCP paths are absolute and `state` requires an explicit workspace. Terminal
+formatting and current-directory flags are not tool arguments. Calls run
+sequentially within each server; cancellation or stdio shutdown stops indexing
+between completed session transactions and skips unfinished final pruning.
+Clients can request progress notifications with a progress token. `resume`
+only returns a human handoff command and never launches a session.
 
 ## The agentchats CLI
 

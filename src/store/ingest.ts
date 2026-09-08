@@ -21,6 +21,7 @@
 import type { Database } from "bun:sqlite";
 import { readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { setImmediate } from "node:timers/promises";
 import type { ParsedSession, Parser } from "../parse/types.ts";
 
 export interface ParserBinding {
@@ -58,6 +59,8 @@ export interface IngestOptions {
    * at 90 days, and the corpus spans weeks, not years. */
   retainDays?: number;
   onProgress?: (event: IngestProgress) => void;
+  /** Stop between complete session transactions; do not prune an unfinished pass. */
+  signal?: AbortSignal;
   /** Injected so an age-bounded run is testable without waiting a day. */
   now?: () => Date;
 }
@@ -235,6 +238,7 @@ export function pendingWork(db: Database, options: IngestOptions): PendingReport
 
 export async function ingest(db: Database, options: IngestOptions): Promise<IngestResult> {
   const { roots, parsers, onProgress } = options;
+  options.signal?.throwIfAborted();
   const now = options.now ?? (() => new Date());
   const failures: IngestFailure[] = [];
   const record = (path: string, error: unknown): void => {
@@ -252,6 +256,7 @@ export async function ingest(db: Database, options: IngestOptions): Promise<Inge
   const files: ScannedFile[] = [];
   const unavailableRoots: string[] = [];
   for (const root of roots) {
+    options.signal?.throwIfAborted();
     const scan = scanRoot(root, record);
     files.push(...scan.files);
     if (!scan.available) unavailableRoots.push(root);
@@ -333,6 +338,13 @@ export async function ingest(db: Database, options: IngestOptions): Promise<Inge
   };
 
   for (const file of files) {
+    // A healthy index may skip every file synchronously. Yield periodically so
+    // the MCP transport can deliver cancellation or EOF during that pass too.
+    if (options.signal && handled % 100 === 0) {
+      await setImmediate();
+      options.signal.throwIfAborted();
+    }
+    options.signal?.throwIfAborted();
     const existing = known.get(file.path);
 
     // Aged out by the file's own clock, so an old transcript is dropped
@@ -374,8 +386,12 @@ export async function ingest(db: Database, options: IngestOptions): Promise<Inge
     let session: ParsedSession | null;
     try {
       if (binding === null) throw new Error("no parser owns this file");
-      session = binding.parse(await binding.read(file.path), file.path);
+      const content = await abortableRead(binding.read(file.path), options.signal);
+      options.signal?.throwIfAborted();
+      session = binding.parse(content, file.path);
+      options.signal?.throwIfAborted();
     } catch (error) {
+      options.signal?.throwIfAborted();
       // The row we already have survives a failed reparse: a transient read
       // error must not evict a session that is still searchable.
       present.add(file.path);
@@ -398,11 +414,13 @@ export async function ingest(db: Database, options: IngestOptions): Promise<Inge
     }
 
     try {
+      options.signal?.throwIfAborted();
       replace(session, file, binding?.archived === true);
       present.add(file.path);
       indexed++;
       report(file.path, "indexed");
     } catch (error) {
+      options.signal?.throwIfAborted();
       present.add(file.path);
       record(file.path, error);
       report(file.path, "failed");
@@ -418,6 +436,7 @@ export async function ingest(db: Database, options: IngestOptions): Promise<Inge
   // the index of everything that volume holds — recoverable only by a full
   // re-ingest once it returns. A row is eligible for removal only when the
   // root that owns it was actually read.
+  options.signal?.throwIfAborted();
   const isUnder = (path: string, root: string): boolean =>
     path === root || path.startsWith(root.endsWith("/") ? root : `${root}/`);
   for (const [path, row] of known) {
@@ -446,4 +465,15 @@ export async function ingest(db: Database, options: IngestOptions): Promise<Inge
     failures,
     unavailableRoots,
   };
+}
+
+/** A cancelled read may finish its I/O, but cannot resume indexing or pruning. */
+function abortableRead(read: Promise<string>, signal?: AbortSignal): Promise<string> {
+  if (!signal) return read;
+  return new Promise((resolve, reject) => {
+    const abort = () => reject(signal.reason);
+    signal.addEventListener("abort", abort, { once: true });
+    if (signal.aborted) abort();
+    read.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
+  });
 }

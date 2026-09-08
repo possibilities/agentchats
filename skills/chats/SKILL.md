@@ -7,238 +7,78 @@ description: >-
   authored documents.
 ---
 
-# Chats — search past coding-agent sessions
+# Chats
 
-Every Claude Code and Codex session on this machine writes a transcript to
-disk. `agentchats` indexes them into a small local SQLite+FTS5 database, and
-this skill is the runbook for wielding it. Past sessions are a first-class
-research source: before re-deriving a fix, re-debugging a familiar error, or
-asking the user what happened, search the index.
+Use Chats when earlier decisions, debugging, or session context would help the
+current task. It searches local Claude Code and Codex transcripts through a
+derived index. Brain covers saved sources; Wiki covers authored documents.
+Native file tools remain useful for investigating an exact source record.
 
-## Non-negotiables
+## Discover and call
 
-- **stdout is data, stderr is diagnostics.** A failed call prints an error
-  envelope — `{"error":{"code","message","hint"}}` — to stderr and returns a
-  nonzero exit; stdout stays empty. Parse stdout as JSON, never scrape prose.
-- **Bound your output.** `--limit`, `--fields`, `--max-content-length`,
-  `--aggregate`. A default-unbounded search in an agent loop is a mistake,
-  not a convenience.
-- **Don't grep the session stores by hand.** `~/.claude/projects` and
-  `~/.codex/sessions` are the index's job: it dedups and ranks across both
-  agents at once. Raw `grep` over those directories is slower and only ever
-  sees one agent's history.
-- **The index is derived, not authoritative.** It mirrors the live
-  transcript stores. A session vanishes from search the moment its
-  transcript is pruned, and the whole database can be thrown away and
-  rebuilt from those stores at any time — see
-  [Environment and layout](#environment-and-layout).
+Read Executor's own `skills({name:"execute"})` for its current calling workflow.
+Inside `execute`, discover `tools.search({namespace:"agentchats"})`, inspect
+`tools.describe.tool({path})`, then call `tools[path](args)` with that returned
+full path. Follow `hasMore` and `nextOffset` for further discovery pages.
+The installed `guide` provides current parameters and result contracts.
 
-## Preflight
+For project bearings, call `state` with an explicit absolute `workspace` and a
+small `budget`. It returns Markdown and no text when that workspace has no
+sessions. Shared MCP processes cannot infer the caller's current directory.
 
-```bash
-agentchats status --json      # is the index present, and is it fresh
+When freshness matters, inspect `status`: `healthy:false` means the index
+needs preparation; `stale:true` means transcripts changed or disappeared.
+An incremental `index` reconciles them. Inspect its `success` and `failures`,
+including when some sessions were indexed. `unavailableRoots` were not
+refreshed, and their existing sessions remain searchable. Cancellation stops
+an unfinished pass without final pruning and keeps completed transactions.
+
+## Search, then inspect evidence
+
+Start with distinctive terms and a bounded result. These `search` arguments
+return at most five conversations:
+
+```json
+{"query":"authentication timeout","limit":5,"fields":"summary","max-content-length":400}
 ```
 
-`status` always succeeds — reporting "zero sessions" is an answer, not a
-failure — so branch on the payload, not the exit code:
+Use the exact reported workspace as a filter when the project is known.
+One hit represents one session, ranked by its matching messages, and cites the
+best message. Terms AND within one message; they do not match words scattered
+across a whole conversation. Use `offset` to paginate.
 
-- `healthy: false` → nothing is indexed yet. `agentchats index`.
-- `stale: true` → `pending` transcripts are new or changed and `vanished`
-  indexed sessions are gone. `agentchats index` reconciles both.
-- `stale: false` → search directly.
+Pass the hit's exact `source_path` and `line` to `view`, or to `expand` with a
+small `context`. `sessions` instead returns its citation path as `path`.
+Do not reconstruct either path. MCP paths must be absolute.
 
-Worth the extra call: `status` costs about half a second because it only
-stats the stores, while an index run that finds nothing to do still costs
-around six. Ask the cheap question before spending the expensive one.
+A message with `truncated:true` is incomplete evidence. `view` with `full:true`
+adds the original `source_record` when it is still readable. Confirm that field
+exists before treating the text as complete. Read neighboring messages to
+check what was decided, then report the finding with its source context.
+Keep technical session IDs in tool calls and use descriptive names in prose.
 
-`unavailableRoots` names any transcript store that could not be read this
-run — an unmounted volume, a store this machine doesn't have. Sessions from
-an unavailable root stay searchable and are never pruned, but nothing under
-it was refreshed.
+For a broad inventory, use an empty query with filters and `aggregate` such as
+`agent,workspace` or `date,agent`. Facets give counts without transcript bodies.
+For query syntax, field choices, recipes, and storage behavior, read
+[search and evidence](references/search-and-evidence.md).
 
-### Workspace bearings
+## Results and handoff
 
-`agentchats state [--workspace <dir>] [--budget <tokens>]` prints the
-recent sessions for one project as a short markdown section, newest first,
-silent when the workspace has none. It's the cheap re-orientation step —
-"what has been happening here" — before reaching for `search`.
+Most tools preserve their existing command-specific JSON object in
+`structuredContent` and standalone JSON text; they have no common success
+wrapper. `guide` alone returns the fleet `{schema_version,ok,error,data}`
+envelope, and `state` stays plain text. Inspect the inner MCP result inside
+Executor's success wrapper.
 
-## The search loop
+For a failed call, parse the standalone JSON in `error.details.content`:
+Executor may omit structured error data. The original error object is
+`{error:{code,message,hint}}`. A failed index pass instead keeps its native
+`success:false` report and failure details. Diagnostic prose is separate.
+`missing-index` calls for an incremental refresh; `not-found` calls for checking
+the citation or freshness; `usage` calls for corrected arguments. An error
+is not evidence that no prior conversation exists.
 
-Discover broadly, then drill into the winner:
-
-```bash
-# 1. Scope the territory when the query is broad
-agentchats search "authentication" --json --aggregate agent,workspace,date
-
-# 2. Search bounded
-agentchats search "authentication timeout" --json --limit 10 \
-  --fields summary --max-content-length 400
-
-# 3. Drill into a hit (source_path + line come from the hit)
-agentchats view /path/to/session.jsonl --line 42 --json
-agentchats expand /path/to/session.jsonl --line 42 --context 5 --json
-
-# 4. Resume or hand off
-agentchats resume /path/to/session.jsonl --shell
-```
-
-**One hit is one session.** Results are ranked sessions, not ranked
-messages: a session scores by its best matching message plus a bonus for how
-many matched, and the hit carries that best message as the citation. So
-`--limit 10` means ten conversations, not ten lines from three of them. When
-you want more evidence from a session you already have, `expand` it.
-
-A hit carries `source_path` and `line` — feed both straight into
-`view`/`expand`/`resume`, don't reconstruct them.
-
-`view` and `expand` report `truncated`. Long tool output is stored capped, so
-a message flagged `truncated: true` is cut mid-text. Don't quote it as
-complete evidence — `agentchats view <path> --line N --full` reads the whole
-record from the transcript and returns it as `source_record`. About 5% of
-messages are capped, nearly all of them tool output. The positional query is
-required but may be the empty string: `agentchats search "" --json` plus
-filters/aggregates is the query-less idiom for "everything in scope."
-
-## Query language
-
-FTS5 syntax. Terms AND by default, case-insensitive. **AND is scoped to a
-single message**: `deploy timeout` finds a message containing both words,
-not a session that mentions them in different turns. Quote a phrase for an
-exact sequence; split a broad question into two or three distinctive terms
-rather than searching a whole sentence.
-
-| Form | Example | Notes |
-|---|---|---|
-| Phrase | `"connection refused"` | exact sequence |
-| OR / NOT | `error OR warning`, `panic NOT test` | |
-| Prefix wildcard | `deploy*` | |
-
-There is no substring or suffix wildcard: `*config*` and `*ction` are not
-supported, and a leading `*` is simply dropped. Search a prefix instead.
-
-Filters compose with any query:
-
-- `--agent claude_code` or `--agent codex` — the only two slugs; nothing
-  else is indexed.
-- `--workspace /path` — one project; use the workspace string exactly as a
-  hit reports it.
-- `--days N`, `--since S`, `--until S` — bound by time.
-- `--offset N` with `--limit N` — pagination; there is no cursor.
-
-## Token discipline
-
-| Lever | Use |
-|---|---|
-| `--limit N` | Always set one |
-| `--fields minimal` | `source_path`, `line`, `agent` — wide scans |
-| `--fields summary` | the above plus `workspace`, `title`, `snippet`, `score`, `created_at` — the usual choice |
-| `--fields <csv>` | any custom list of hit fields |
-| `--max-content-length N` | shorten `snippet` and `title`; citation fields are never touched |
-| `--aggregate agent,workspace,date` | counts instead of content; a comma list returns one facet per dimension |
-
-An unknown name in `--fields` is a usage error, not an empty result — a
-misspelling tells you so rather than looking like "no such data".
-
-Paginate with `--offset`, not by re-running a query wider.
-
-## Recipes
-
-**"I've seen this error before."** Search the distinctive token, not the
-whole message; strip paths and line numbers that won't recur:
-
-```bash
-agentchats search "ECONNREFUSED redis" --json --limit 5 --fields summary --days 90
-```
-
-**Resume context for this workspace.** What was I (or another agent) doing
-here?
-
-```bash
-agentchats sessions --current --json
-agentchats sessions --workspace "$(pwd)" --json --limit 5
-agentchats search "" --json --workspace "$(pwd)" --days 7 --aggregate date,agent
-```
-
-Then `agentchats resume <source_path> --shell` prints the native resume
-command for that session's harness (`claude` or `codex`) — hand it to the
-user rather than executing a nested agent yourself.
-
-**Cross-agent archaeology.** What did the other agent conclude about X?
-
-```bash
-agentchats search "database migration strategy" --json --limit 8 --fields summary
-# then narrow: --agent codex, or --agent claude_code
-```
-
-**Project archaeology.** For "which sessions touched this project", scope
-rather than search — the workspace is a filter, not a term:
-
-```bash
-agentchats sessions --workspace ~/code/myproject --json --limit 10
-```
-
-**File archaeology.** Which sessions touched this file? Filenames appear in
-tool calls, so they are searchable text:
-
-```bash
-agentchats search "install-ai-tools" --json --limit 5 --fields summary
-```
-
-**Daily/weekly review.** Aggregate, don't enumerate:
-
-```bash
-agentchats search "" --json --days 1 --aggregate agent,workspace
-agentchats search "" --json --days 7 --aggregate date,agent
-```
-
-## Errors and recovery
-
-| Exit | Meaning | Move |
-|---|---|---|
-| 0 | success | parse stdout |
-| 1 | error | read `hint` on stderr, act on it |
-| 3 | index holds nothing — `search`/`sessions`/`view`/`expand` only | `agentchats index` |
-| 64 | usage error | fix the invocation per `hint` |
-
-## Environment and layout
-
-- This tool's own recorded output is not indexed. A saved search result
-  holds your query terms densely and would otherwise win the very search
-  that produced it, so an `agentchats`/`cass` invocation and its output are
-  skipped at parse time. Conversation *about* the tool is indexed normally.
-- The index is derived state at `~/.local/state/agentchats/index.db` —
-  roughly 1.8 GB for the whole corpus. Delete it and run
-  `agentchats index` to rebuild from nothing; nothing is lost, because
-  every fact in it is re-derivable from the live transcript stores.
-- Those stores are `~/.claude/projects` (claude_code) and
-  `~/.codex/sessions` (codex). A preserved archive can be indexed beside
-  them, opt-in, by listing it in `~/.config/agentchats/config.json`:
-  `{"archives":[{"path":"/Volumes/Scratch/claude-archive/home/.claude/projects","agent":"claude_code"}]}`.
-  Archived sessions are searchable and readable but **not resumable** — the
-  harness pruned the original, so `resume` refuses them with `code:
-  "archived"` and the picker never offers them. When the same session exists
-  live and archived, the live copy wins.
-- `agentchats index` is incremental and cheap to rerun; `--retain-days N`
-  bounds how far back it reaches, for accounts with long transcript
-  history.
-- Installed and index-prepared by `~/code/agentchats/scripts/install.sh
-  --install` (AgentStart runs it); rerunning it is always safe.
-
-## Anti-patterns
-
-| Don't | Do |
-|---|---|
-| `grep -r ~/.claude/projects` | `agentchats search … --json` |
-| Unbounded `agentchats search "error" --json` | `--limit`, `--fields` |
-| Re-running a query wider for page 2 | `--offset` |
-| Pasting full sessions into your context | `view`/`expand` the cited lines |
-| Searching the whole error string verbatim | distinctive tokens, quoted phrases |
-
-## For the human
-
-`agentchats search` with no `--json` opens the Signal Room picker — a
-live-search TUI over the same index, optionally seeded with a query
-(`agentchats search "authentication"`). `--workspace` scopes it to one
-project; `--include-auxiliary` widens beyond full-harness sessions. A pick
-writes a resume directive that agentsurface realizes as a herdr resume.
+`resume` returns the native command for a human handoff; it does not launch a
+session. Archived copies remain readable but return `archived` on resume.
+The operator CLI and bare `agentchats search` picker remain available for
+human use. Starting another agent still depends on the task's authorization.

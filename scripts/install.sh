@@ -74,7 +74,7 @@ case "${1:-}" in
 agentchats:
   bun on PATH is required (installed by AgentStart)
   ln -sfn $repo_root/bin/agentchats $dest_dir/agentchats   # the agentchats CLI, linked editable
-  (cd $repo_root && bun install)                           # only when node_modules/@opentui/core is missing
+  (cd $repo_root && bun install --frozen-lockfile)           # resolve the complete pinned CLI, TUI, and MCP dependencies before linking
   scripts/run-with-timeout ${index_timeout_seconds}s ... agentchats index   # incremental when the index exists; safe to rerun
 EOF
         exit 0
@@ -103,19 +103,16 @@ command -v bun >/dev/null 2>&1 \
 mkdir -p "$dest_dir"
 export PATH="$dest_dir:$PATH"
 
+# An old TUI marker says nothing about a newly added MCP dependency. Resolve
+# the complete lockfile before switching the command to this source.
+printf 'Installing frozen dependencies.\n'
+(cd "$repo_root" && bun install --frozen-lockfile) \
+    || die "bun install --frozen-lockfile failed in $repo_root"
+
 # The agentchats CLI is linked editable back into this checkout, the same
 # contract the other agent* checkouts use for their own CLIs.
 printf 'Linking the agentchats CLI.\n'
 ln -sfn "$repo_root/bin/agentchats" "$dest_dir/agentchats"
-
-# Dependencies live in this checkout's node_modules; @opentui/core is the
-# search TUI's marker package. Skip the install when it is already present
-# so a rerun stays fast.
-if [ ! -d "$repo_root/node_modules/@opentui/core" ]; then
-    printf 'Installing dependencies.\n'
-    (cd "$repo_root" && bun install) \
-        || die "bun install failed in $repo_root"
-fi
 
 # Build or refresh the index through the newly linked CLI. Incremental and
 # safe to rerun; bounded so a stuck rebuild cannot hang the installer or

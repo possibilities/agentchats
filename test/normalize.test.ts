@@ -133,6 +133,30 @@ describe("the index does not index itself", () => {
       message: { role: "user", content: [{ type: "tool_result", tool_use_id: id, content: text }] },
     });
 
+  test("native MCP and Executor queries do not index their own excerpts in either format", () => {
+    const calls = [
+      { name: "mcp__agentchats__search", input: { query: "echo-token" } },
+      { name: "mcp__executor__execute", input: { code: 'return await tools["agentchats.org.default.search"]({query:"echo-token"});' } },
+      { name: "mcp__executor__execute", input: { code: 'return await tools.agentchats.org.default.view({source_path:"/tmp/x",line:1});' } },
+    ];
+    for (const entry of calls) {
+      const claude = parseClaude([
+        JSON.stringify({ type: "assistant", timestamp: "2026-09-01T00:00:00Z", cwd: "/w", message: { role: "assistant", content: [{ type: "tool_use", id: "self", ...entry }] } }),
+        result("self", "echo-token"),
+        call("ordinary", "echo retained"), result("ordinary", "ordinary evidence"),
+      ].join("\n"), "/Users/x/.claude/projects/p/s.jsonl");
+      expect(claude!.messages.map((message) => message.body)).toEqual(['Bash {"command":"echo retained"}', "ordinary evidence"]);
+      const codexRecord = (payload: Record<string, unknown>) => JSON.stringify({ type: "response_item", timestamp: "2026-09-01T00:00:00Z", payload });
+      const codex = parseCodex([
+        codexRecord({ type: "function_call", call_id: "self", name: entry.name, arguments: JSON.stringify(entry.input) }),
+        codexRecord({ type: "function_call_output", call_id: "self", output: "echo-token" }),
+        codexRecord({ type: "message", role: "user", content: [{ type: "input_text", text: "Keep discussing agentchats.org.default.search here." }] }),
+      ].join("\n"), "/Users/x/.codex/sessions/2026/09/01/rollout-2026-09-01T00-00-00-019fc538-de47-7012-87dd-31ca0fe9890a.jsonl");
+      expect(codex!.messages).toHaveLength(1);
+      expect(codex!.messages[0]!.body).toContain("Keep discussing");
+    }
+  });
+
   test("a recorded search and its output are both skipped", () => {
     // A saved search result holds the query terms at maximum density with no
     // dilution — bm25's ideal document — so it wins the very query that
