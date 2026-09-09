@@ -1,5 +1,8 @@
 # Agentchats agent guidance
 
+Read [CONTEXT.md](CONTEXT.md) for session/index terms and the
+[decision log](docs/adr/README.md) before changing indexing or viewer boundaries.
+
 ## What this repository is
 
 Agentchats makes the local coding-agent session history searchable. It owns
