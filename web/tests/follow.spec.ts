@@ -137,3 +137,13 @@ test("the unread chip stays reachable in a narrow transcript", async ({ page }) 
   await chip.click()
   await expect.poll(() => bottomGap(viewport)).toBeLessThan(2)
 })
+
+test("empty and non-overflowing transcripts expose no jump control", async ({ page }) => {
+  await page.evaluate(() => (window as any).directTranscript.setMessages([]))
+  await expect(page.getByRole("button", { name: /Jump to latest/ })).toHaveCount(0)
+  await page.evaluate(() => (window as any).directTranscript.setMessages([
+    { id: "short", role: "assistant", content: "A short message", status: "complete" },
+  ]))
+  await expect(page.getByText("A short message", { exact: true })).toBeVisible()
+  await expect(page.getByRole("button", { name: /Jump to latest/ })).toHaveCount(0)
+})

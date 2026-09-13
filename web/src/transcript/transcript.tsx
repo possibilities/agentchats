@@ -59,7 +59,7 @@ function TranscriptFollow({
   }, [messages, away, follow, scrollToEnd])
 
   const countLabel = `${unread} new ${unread === 1 ? "message" : "messages"}`
-  return showJumpToLatest ? (
+  return showJumpToLatest && away ? (
     <MessageScrollerButton
       size="sm"
       className="jump-latest"

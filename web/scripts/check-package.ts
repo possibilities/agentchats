@@ -52,13 +52,14 @@ try {
     path.join(directory, "consumer.tsx"),
     `
 import { groupTranscript, mergeTranscript, type TranscriptMessage, type TranscriptSource } from '@agentchats/transcript'
-import { Transcript, TranscriptBlock, useTranscript } from '@agentchats/transcript/react'
+import { Transcript, TranscriptBlock, TranscriptComposer, type TranscriptQueuedMessage, useTranscript } from '@agentchats/transcript/react'
 import { createCodexTranscriptSource } from '@agentchats/transcript/codex'
 const messages: TranscriptMessage[] = [{ id: 'one', role: 'user', content: 'Hello', status: 'complete' }]
 const source: TranscriptSource = createCodexTranscriptSource()
+const queue: TranscriptQueuedMessage[] = [{ id: 'q', text: 'Next', pausedReason: 'Stopped', canResume: true }]
 export function Consumer() {
   const { snapshot } = useTranscript(source, null)
-  return <><Transcript transcriptId="one" messages={snapshot?.messages ?? messages} /><TranscriptBlock block={groupTranscript(messages)[0]} /></>
+  return <><Transcript transcriptId="one" messages={snapshot?.messages ?? messages} /><TranscriptBlock block={groupTranscript(messages)[0]} /><TranscriptComposer transcriptId="one" active queue={queue} onSend={async () => {}} onEditingQueuedChange={async () => {}} /></>
 }
 if (typeof mergeTranscript !== 'function') throw new Error('Missing data entry')
 `,

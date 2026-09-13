@@ -2,6 +2,7 @@
 @import "theme.css";
 @import "presentation.css";
 @source "./transcript.tsx";
+@source "./composer.tsx";
 @source "../components/chat";
 @source "../components/ui/button.tsx";
 @source "../components/ui/bubble.tsx";
@@ -10,10 +11,15 @@
 @source "../components/ui/message-scroller.tsx";
 @source "../components/ui/marker.tsx";
 @source "../components/ui/tooltip.tsx";
+@source "../components/ui/dropdown-menu.tsx";
+@source "../components/ui/input-group.tsx";
+@source "../components/ui/input.tsx";
+@source "../components/ui/textarea.tsx";
 @custom-variant dark (&:is(.dark *));
 
 .agentchats-transcript,
 :scope.agentchats-transcript {
+  box-sizing: border-box;
   color: var(--text);
   background: var(--canvas);
   font-family: var(--font-sans);

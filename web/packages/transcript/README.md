@@ -1,6 +1,6 @@
 # @agentchats/transcript
 
-Composable Human / Agent transcripts for React 19. This is the initial 0.1 API,
+Composable Human / Agent transcripts for React 19. This is the 0.2 API,
 prepared for local packaging; it has not been published to a registry.
 
 The reader in this repository uses the same `Transcript` component. The package
@@ -11,7 +11,7 @@ ships no app shell, session picker, command UI, database reader, or server proce
 | Import | Surface |
 | --- | --- |
 | `@agentchats/transcript` | `TranscriptMessage`, `TranscriptBlock`, snapshot/update/source types, `groupTranscript`, `activitySummary`, `mergeTranscript` |
-| `@agentchats/transcript/react` | `Transcript`, `TranscriptBlock`, `useTranscript` and their props/state types |
+| `@agentchats/transcript/react` | `Transcript`, `TranscriptBlock`, `TranscriptComposer`, `useTranscript` and their props/state types |
 | `@agentchats/transcript/codex` | `createCodexTranscriptSource`, `CodexTransportOptions` |
 | `@agentchats/transcript/styles.css` | Optional compiled arthack styles; no consumer Tailwind setup needed |
 
@@ -57,6 +57,73 @@ For a host-owned list or virtualizer, render `TranscriptBlock` for each result o
 activity run; its ID is the first message ID. Both components include their own
 required providers. Human / Agent are the presentation labels; standard data
 roles remain `user`, `assistant`, `tool`, and `system`.
+
+## Agent composer
+
+Render `TranscriptComposer` as a sibling below the scrollable `Transcript`, inside
+the same height-constrained flex column. Do not put it in the scrolling `footer`.
+Use it only in lanes where the host can send Human input to the Agent.
+
+```tsx
+import { Transcript, TranscriptComposer } from '@agentchats/transcript/react'
+
+<section style={{ height: 700, display: 'flex', flexDirection: 'column' }}>
+  <Transcript transcriptId={viewId} messages={messages} />
+  <TranscriptComposer
+    transcriptId={viewId}
+    active={turnRunning}
+    pending={requestPending}
+    stopping={awaitingInterruptedTurn}
+    disabled={!connected}
+    onSend={startTurn}
+    onSteer={steerCurrentTurn}
+    onQueue={enqueueFollowUp}
+    onInterrupt={interruptCurrentTurn}
+    queue={queuedMessages}
+    onSteerQueued={steerQueuedMessage}
+    onEditQueued={saveQueuedMessage}
+    onRemoveQueued={removeQueuedMessage}
+    onResumeQueued={resumeQueuedMessage}
+    onEditingQueuedChange={pauseQueueForEditing}
+  />
+</section>
+```
+
+Callbacks return `void | Promise<void>`. The component awaits acceptance,
+prevents duplicate requests, preserves rejected drafts, and shows the rejection's
+message. There are no automatic retries. Use `transcriptId` for the host's view
+incarnation, not just a reusable display title; changing it clears local drafts,
+errors and editing state. Hosts still fence all transport and queue updates to
+the exact session/turn and view that accepted the action.
+
+Idle submit is **Send**. While `active`, submit is **Steer** or **Queue**, selected
+in the menu. `followUpMode` optionally controls that setting, with
+`onFollowUpModeChange`; otherwise it is local and defaults to desktop Codex's
+`steer`. Missing callbacks disable the corresponding capability. Enter submits,
+Shift+Enter adds a newline, and Cmd/Ctrl+Shift+Enter temporarily inverts the active
+mode. IME composition does not submit. `placeholder`, `defaultValue`, `className`
+and `aria-label` are optional; the default label is **Message Agent**.
+
+An empty active composer shows **Stop**, which only calls `onInterrupt`. Keep
+`stopping` true after the interrupt acknowledgment until the terminal event.
+`pending` describes an in-flight host request; `active` describes running agent
+work. Active work permits further input; pending/stopping prevent duplicate
+operations. Hosts can independently disable the whole surface when unavailable.
+
+`queue` is a host-owned ordered array of `TranscriptQueuedMessage`:
+`{ id, text, pausedReason?, disabled?, canSteer?, canResume? }`. Hosts dispatch one
+at a time on idle and pause remaining entries after Stop or a failure. The UI
+does not drain the queue. `canSteer={false}` and `canResume={false}` disable those
+actions for uncertain or stale entries. Resume requires `canResume: true` and a
+paused reason. Omit callbacks for controls the host does not support.
+
+Edit awaits `onEditingQueuedChange(id)` before restoring the row to the composer;
+the host should pause/exclude that row from dispatch and reject a raced already-
+sent row. Saving calls `onEditQueued(id, text)` to update the original queue
+position, then awaits `onEditingQueuedChange(null)`. Cancel only releases editing
+and restores the draft that was present before editing. Rejections keep the edit
+available. See [ADR 0004](../../../docs/adr/0004-host-owned-agent-interaction.md)
+in the source repository for the Codex desktop and app-server evidence.
 
 ## Live sources
 
