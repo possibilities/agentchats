@@ -13,15 +13,14 @@ the path from transcript to search result and conversation reader:
 - `src/store/` — the SQLite+FTS5 schema, ingest (parse, normalize, write;
   incremental and retention-aware), and the query layer search reads from.
 - `src/cli/` — the `agentchats` command surface: `index`, `status`,
-  `search`, `sessions`, `view`, `expand`, `resume`, `state`, and `guide`, plus
+  `search`, `sessions`, `view`, `expand`, `resume`, `state`, `guide`, and the operator `serve`, plus
   the in-process stdio MCP adapter.
 - `web/` — the local React/Vite conversation reader; agentchats session
   discovery with a Codex committed-history adapter. See `web/README.md`.
 - `src/tui/` — the Signal Room resume picker (bun + OpenTUI) behind
   `agentchats search` with no `--json`.
 - `scripts/install.sh` — links the `agentchats` CLI into `~/.local/bin` and
-  builds or refreshes the index so Claude Code and Codex sessions are
-  searchable.
+  prepares the production web reader and refreshes the session index.
 - `skills/chats/` — the source of the `chats` agent skill, the runbook that
   teaches agents to wield `agentchats`. The `skills/<name>/` layout is the
   convention AgentStart's per-checkout skill scan discovers.
@@ -48,7 +47,8 @@ synchronization path here.
   A machine without this checkout is a skip inside AgentStart, not a failure;
   a present checkout that fails to install is a real error and propagates.
 - The installer resolves the complete frozen dependency lockfile before
-  linking the CLI, then builds or refreshes the index through the newly linked
+  linking the CLI: root Bun dependencies, web npm dependencies, and the web
+  production build. It then refreshes the index through the newly linked
   CLI — every step idempotent, so a rerun after a failure just resumes.
 - The index prepares incrementally when healthy and rebuilds fully via
   `agentchats index --full` when missing, unhealthy, or after a failed
@@ -116,6 +116,10 @@ synchronization path here.
   Root `bun test` covers `test/`; the reader has separate Bun API tests and
   Playwright browser specs. Retain the shipped arthack web design, documented
   in `web/docs/arthack-aesthetic-brief.md`, rather than the TUI theme.
+- `serve` stays foreground under portless at the fixed HTTPS agentchats host.
+  Keep the backend loopback-only with strict binding and the exact-origin
+  guard. Runtime restarts must not install packages, rebuild, or prompt for
+  sudo. AgentStart owns the shared proxy and launchd job.
 - Installer changes: `./scripts/install.sh --check` here to see the plan,
   then `--install` to apply it, then AgentStart's convergence check
   (`~/code/agentstart/scripts/install.sh --install`).

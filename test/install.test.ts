@@ -9,9 +9,10 @@ let env: Record<string, string | undefined>;
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), "agentchats-install-"));
   repo = join(root, "repo");
-  for (const path of ["repo/scripts", "repo/bin", "repo/node_modules/@opentui/core", "fake-bin", "home"]) mkdirSync(join(root, path), { recursive: true });
+  for (const path of ["repo/scripts", "repo/bin", "repo/web", "repo/node_modules/@opentui/core", "fake-bin", "home"]) mkdirSync(join(root, path), { recursive: true });
   for (const file of ["install.sh", "run-with-timeout"]) copyFileSync(resolve(import.meta.dir, "../scripts", file), join(repo, "scripts", file));
   writeFileSync(join(root, "fake-bin/bun"), '#!/bin/bash\nprintf "deps:%s\\n" "$*" >> "$AGENTCHATS_TEST_INSTALL_LOG"\n[ "${AGENTCHATS_TEST_FAIL_INSTALL:-0}" != 1 ]\n', { mode: 0o755 });
+  writeFileSync(join(root, "fake-bin/npm"), '#!/bin/bash\nprintf "reader:%s\\n" "$*" >> "$AGENTCHATS_TEST_INSTALL_LOG"\n[ "${AGENTCHATS_TEST_FAIL_READER:-}" != "$3${4:+ $4}" ]\n', { mode: 0o755 });
   writeFileSync(join(repo, "bin/agentchats"), '#!/bin/bash\nprintf "cli:%s\\n" "$*" >> "$AGENTCHATS_TEST_INSTALL_LOG"\n', { mode: 0o755 });
   env = { ...process.env, HOME: join(root, "home"), PATH: `${join(root, "fake-bin")}:${process.env["PATH"] ?? ""}`, AGENTCHATS_TEST_INSTALL_LOG: join(root, "calls") };
 });
@@ -31,7 +32,7 @@ test("the plan is read-only and stale TUI markers do not skip frozen dependencie
   expect(existsSync(join(root, "home/.local"))).toBe(false);
   const installed = await run("--install");
   expect(installed.code).toBe(0);
-  expect(readFileSync(join(root, "calls"), "utf8")).toBe("deps:install --frozen-lockfile\ncli:index\n");
+  expect(readFileSync(join(root, "calls"), "utf8")).toBe(`deps:install --frozen-lockfile\nreader:--prefix ${repo}/web ci\nreader:--prefix ${repo}/web run build\ncli:index\n`);
   expect(readlinkSync(join(root, "home/.local/bin/agentchats"))).toBe(join(repo, "bin/agentchats"));
   expect((await run("--install")).code).toBe(0);
 });
@@ -48,3 +49,17 @@ test("dependency failure preserves the existing command and does not start an in
   expect(readFileSync(previous, "utf8")).toBe("old command");
   expect(readFileSync(join(root, "calls"), "utf8")).toBe("deps:install --frozen-lockfile\n");
 });
+
+for (const phase of ["ci", "run build"]) {
+  test(`reader ${phase} failure preserves the command link and never indexes`, async () => {
+    mkdirSync(join(root, "home/.local/bin"), { recursive: true });
+    const target = join(root, "home/.local/bin/agentchats");
+    const previous = join(root, "old-agentchats");
+    writeFileSync(previous, "old command");
+    symlinkSync(previous, target);
+    env["AGENTCHATS_TEST_FAIL_READER"] = phase;
+    expect((await run("--install")).code).toBe(1);
+    expect(readlinkSync(target)).toBe(previous);
+    expect(readFileSync(join(root, "calls"), "utf8")).not.toContain("cli:index");
+  });
+}

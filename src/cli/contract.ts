@@ -136,6 +136,12 @@ const commands: ContractCommand[] = [
     audience: "agent", mutates: false, x_output: "json-or-text", arguments: [json],
   },
   {
+    name: "serve", summary: "Run the local conversation reader at https://agentchats.localhost",
+    audience: "operator", mutates: true, blocking: true, x_output: "text", arguments: [],
+    guidance: "Runs the installed production build and Bun reader API under portless in the foreground. Requires Node.js 24+ and a running local HTTPS portless proxy. Run scripts/install.sh --install after updating this checkout to prepare the reader. TERM/INT/HUP stop the owned reader and release its route. This operator command is not an MCP tool.",
+    examples: [{ invocation: "agentchats serve", description: "Keep the reader running for local use or launchd supervision." }],
+  },
+  {
     name: "mcp", summary: "Serve the producer MCP tools over stdio",
     audience: "internal", mutates: true, blocking: true, x_output: "text", arguments: [],
   },
@@ -168,6 +174,8 @@ export const CONTRACT = {
       { code: "archived", meaning: "The transcript is a preserved copy", recovery: "Use view or expand; an archived copy cannot be resumed." },
       { code: "unsupported", meaning: "The session has no supported native resume invocation", recovery: "Read the transcript instead of launching a guessed command." },
       { code: "usage", meaning: "The invocation is invalid", recovery: "Read the guide and correct the arguments." },
+      { code: "missing-reader", meaning: "The operator reader is not prepared", recovery: "Install Node.js 24+ and rerun scripts/install.sh --install." },
+      { code: "missing-proxy", meaning: "The local HTTPS portless proxy is unavailable", recovery: "Complete portless service install or portless proxy start interactively, then retry serve." },
       { code: "internal", meaning: "An unexpected local failure occurred", recovery: "Inspect the reported error; do not treat it as an empty search result." },
     ],
     read_only_commands: commands.filter((command) => !command.mutates).map((command) => command.name),

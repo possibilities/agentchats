@@ -43,33 +43,40 @@ scripts/install.sh --check     # print the plan without changing anything
 ~/code/agentstart/scripts/sync-skills   # refresh the common capability pack
 ```
 
-The installer resolves the complete frozen dependency lockfile before linking
-the CLI, then builds or refreshes the index
-through the newly linked CLI. Index-building subprocesses are time-bounded
+The installer resolves both frozen lockfiles and builds the production reader
+before linking the CLI, then refreshes the index through the newly linked CLI. Index-building subprocesses are time-bounded
 (`scripts/run-with-timeout`) and reaped on timeout or installer termination,
 so a stuck rebuild cannot hang AgentStart or leave an orphaned process
 behind.
 
 ## Run the conversation reader
 
-From this checkout, with Bun 1.3.14+ and Node 22.12+:
+From this checkout, with Bun 1.3.14+, Node 24+, and npm:
 
 ```sh
-bun install --frozen-lockfile
-npm --prefix web ci
-./bin/agentchats index
-bun run web:dev
+scripts/install.sh --install
+agentchats serve
 ```
 
-Open the loopback URL Vite prints. Messages / Full, expandable tools and diffs,
+Open **https://agentchats.localhost**. The shared portless HTTPS proxy needs
+one-time interactive setup (`portless service install`, or `portless proxy start`),
+including sudo and CA trust. Messages / Full, expandable tools and diffs,
 and Watch live all use the shipped arthack web design. This initial reader is
 Codex-only; the index, CLI, and MCP continue to cover Claude Code too.
 
 `bun run web:check` checks reader lint, types, and the production build.
 After `cd web && npx playwright install chromium`, `bun run check` from the
-repository root verifies both trees, including API and browser tests. The CLI
-installer still needs only the root Bun dependencies; reader dependencies are
-installed separately for local development. There is no always-on service yet.
+repository root verifies both trees, including API and browser tests.
+
+The normal installer installs both lockfiles and builds the reader before
+linking the CLI. Reinstall and restart after updating the checkout. `serve`
+runs the prepared build and Bun reader API under pinned portless in the
+foreground; it never rebuilds or prompts for sudo during a service restart.
+The route name is fixed even in worktrees. Bind failures and missing
+prerequisites exit nonzero; TERM/INT/HUP stop the child and release the route.
+AgentStart owns the `io.arthack.agentchats.serve` launchd job, invoking
+`~/.local/bin/agentchats serve` with Bun and Node on PATH. No launchd files are
+installed here. For direct development, `bun run web:dev` still works.
 
 See [the reader guide](web/README.md) for data sources and limitations, and
 [ADR 0002](docs/adr/0002-own-the-web-conversation-reader.md) for the boundary.

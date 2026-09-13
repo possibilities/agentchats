@@ -6,28 +6,70 @@ messages from one transcript.
 
 ## Run locally
 
-Requires Bun 1.3.14+ and Node.js 22.12+. From the repository root:
+Requires Bun 1.3.14+, Node.js 24+, and npm. From the repository root:
 
 ```sh
-bun install --frozen-lockfile
-npm --prefix web ci
-./bin/agentchats index
-bun run web:dev
+scripts/install.sh --install
+agentchats serve
 ```
 
-Open the loopback URL Vite prints (normally `http://127.0.0.1:5173`). The Vite
-process runs under Bun to share agentchats' SQLite query layer. Both development
-and production preview include the read-only local API:
+Open **https://agentchats.localhost**. `serve` uses this fixed name even from a
+Git worktree, independent of the caller's working directory. It runs the built
+Vite preview under Bun, retaining the session-index and Codex reader API.
+The installer resolves the root Bun lockfile and `web/package-lock.json`
+(including pinned portless), builds the reader, then updates the CLI link and
+refreshes the index. Rerun the installer and restart `serve` after updating code.
+`serve` itself neither installs packages nor rebuilds on service restarts.
+
+### Shared proxy prerequisite
+
+The portless HTTPS proxy must already be running on loopback port 443. Set it up
+once in an interactive terminal, completing sudo and local CA trust:
 
 ```sh
+portless service install       # shared proxy starts with the machine
+# Or, for the current login:
+portless proxy start
+portless doctor
+```
+
+These commands require a global portless installation supplied by the machine's
+stack setup. `serve` uses its own locked portless dependency. If the global
+command is unavailable, use `web/node_modules/.bin/portless` from this checkout.
+Safari may also need `portless hosts sync` after the route is registered.
+The foreground service disables automatic hosts-file edits and never prompts
+for sudo. Missing proxy or build prerequisites produce an error and nonzero exit.
+
+### Foreground service contract
+
+The launchd entry point is `~/.local/bin/agentchats serve`. KeepAlive supervision
+belongs to AgentStart's `io.arthack.agentchats.serve` job; this repository does not
+install that job or change the shared proxy. Supply the target user's `HOME`
+and a `PATH` containing Bun and Node.js 24+ (typically `~/.bun/bin`,
+`~/.local/bin`, `/opt/homebrew/bin`, and the standard system paths). No working
+directory is required. Keep stdout/stderr attached to the supervisor's logs.
+
+`serve` stays in the foreground. TERM, INT, or HUP wait for portless to stop its
+preview process tree and release the route; child failures preserve a nonzero
+exit. Duplicate routes are refused without taking over the existing reader.
+The backend binds `127.0.0.1` on portless's assigned `PORT` with strict binding,
+so it fails instead of selecting an unregistered port. The public origin is
+fixed to `https://agentchats.localhost`; LAN, tunnels, wildcard routing, and
+inherited proxy-bypass settings are disabled. The API permits the exact HTTPS
+origin forwarded by portless and direct loopback reads, with foreign origins
+and hosts still rejected. The shared proxy must also run in loopback mode.
+
+### Development and direct preview
+
+```sh
+bun run web:dev                # ordinary Vite development, loopback URL
 bun run web:build
-npm --prefix web run preview
+npm --prefix web run preview   # direct loopback production preview
 ```
 
-Inside `web/`, `npm run dev`, `npm run check`, and `npm run preview` work too.
-This is a local application: static deployment cannot read local databases.
-No launchd job, portless route, or always-on service is installed by this move.
-The normal CLI installer does not install or start the reader.
+Inside `web/`, `npm run dev`, `npm run check`, and `npm run preview` also work.
+Both preview paths include the local API. A static hosted build cannot read
+this machine's history.
 
 ## Read and inspect
 
@@ -58,7 +100,7 @@ Watch reads Codex directly and does not require repeated indexing.
 Known thread IDs can open directly, including before a session is indexed:
 
 ```text
-http://127.0.0.1:5173/?thread=YOUR_THREAD_ID
+https://agentchats.localhost/?thread=YOUR_THREAD_ID
 ```
 
 ## Local data
@@ -85,7 +127,7 @@ The API exposes:
 Queries use bound parameters. Items and their latest ordinal share one read
 snapshot; the ordinal advances even when Messages hides tool records. Markdown
 renders without raw HTML. Responses are non-cacheable and restricted to the
-local origin in both Vite dev and preview.
+local origin in Vite dev and preview, including the exact HTTPS portless host.
 
 Older index entries may lack Codex committed items. This first move preserves
 the shipped Codex reader; it does not reconstruct tool structures from indexed
@@ -107,7 +149,8 @@ bun run check                     # root CLI/index/MCP checks + reader checks
 `bun test` at the root runs only `test/`; `npm --prefix web run test:api` runs
 `web/server-tests/`. `npm --prefix web run test:browser` runs Playwright with its
 own Vite process on loopback port 5197 (`AGENTCHATS_TEST_PORT` overrides it). Browser tests use synthetic API responses;
-API tests create temporary SQLite fixtures. Neither touches the operator's history.
+API tests create temporary SQLite fixtures; the production test uses the actual
+portless HTTPS proxy library with a temporary certificate and unprivileged ports. Neither touches the operator's history.
 The browser suite checks actual components and writes screenshots/traces to
 ignored `web/test-results/`, so routine checks do not rewrite tracked evidence.
 
@@ -118,6 +161,8 @@ The imported, approved review images contain **synthetic conversations**:
 
 ## Structure and provenance
 
+- `server/preview.ts`: production preview launched by `agentchats serve`.
+- `server/local-origin.ts`: loopback and exact-origin request guard.
 - `server/session-index.ts`: read-only adapter to agentchats' session query.
 - `server/reader-api.ts`: local API, Codex metadata, and committed-history reader.
 - `src/lib/api/codex.ts`: Codex records mapped to presentation types.

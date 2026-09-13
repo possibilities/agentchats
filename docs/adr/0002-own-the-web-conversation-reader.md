@@ -2,6 +2,7 @@
 
 Status: Accepted
 Date: 2026-09-13
+Updated: 2026-09-13 — Mike approved the foreground portless service follow-up.
 
 ## Context
 
@@ -40,8 +41,10 @@ or a restriction in the shared query layer.
 ## Consequences
 
 - `web/` has its own npm lockfile, DOM typecheck, lint, API tests, and Playwright
-  suite. Root Bun dependencies and CLI installation remain independent. Root
-  `bun run check` and CI verify both trees; each test runner has an explicit root.
+  suite. The normal installer now resolves both frozen lockfiles and builds
+  production assets before linking the CLI. Core and web dependencies retain
+  separate lockfiles. Root `bun run check` and CI verify both trees; each test
+  runner has an explicit root.
 - This is a local read-only app. Vite dev and preview bind loopback; the API
   rejects foreign hosts/origins. A static hosted build cannot read local history.
 - The current rail filters the bounded recent-session list by title, workspace,
@@ -50,5 +53,18 @@ or a restriction in the shared query layer.
 - Sessions absent from Codex state, or marked archived there, are omitted from
   the recent index candidates. Some older indexed Codex transcripts may have no
   committed history; the reader does not reconstruct rich items from rollouts.
-- Service ownership is agentchats. An `agentchats serve` command, launchd label
-  `io.arthack.agentchats.serve`, and `agentchats.localhost` routing are deferred.
+- The initial service deferral is lifted by Mike's follow-up approval.
+  `agentchats serve` runs Bun's Vite production preview and reader API under
+  pinned portless at exactly `https://agentchats.localhost`. It runs in the
+  foreground, consumes the installer's build, refuses duplicate/busy binds,
+  and forwards TERM/INT/HUP until portless has reaped the reader and removed
+  its route. It is an operator command, outside the MCP producer tools.
+- The shared HTTPS proxy must be prepared interactively (sudo and CA trust)
+  through `portless service install` or `portless proxy start`. Serve probes
+  loopback port 443 and fails with recovery advice when absent; it does not
+  prompt, install the proxy, or fall back to another URL. Both backend and
+  proxy stay loopback-only, with no inherited LAN/tunnel/bypass modes. The
+  API accepts only direct loopback origins or its exact forwarded HTTPS host.
+- AgentStart owns `io.arthack.agentchats.serve`, invoking the installed CLI
+  with the user's HOME and Bun/Node PATH. Launchd and shared proxy setup are
+  separate from this repository's installer and remain sibling-thread work.

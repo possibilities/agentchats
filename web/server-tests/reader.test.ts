@@ -15,6 +15,7 @@ let index: Database
 let state: Database
 let history: Database
 let files: string[]
+let readerEnv: Record<string, string | undefined>
 
 function indexSession(id: string, agent = "codex", archived = 0, updated = "2026-09-13") {
   index.query(`INSERT INTO sessions
@@ -51,7 +52,8 @@ beforeEach(async () => {
   history.exec(`CREATE TABLE thread_items (thread_id TEXT, turn_id TEXT, item_id TEXT,
     rollout_ordinal INTEGER, created_at_ms INTEGER, item_type TEXT, item_json TEXT);
     CREATE TABLE thread_turns (thread_id TEXT, rollout_ordinal INTEGER, status TEXT)`)
-  const middleware = readerApiMiddleware({ HOME: directory, AGENTCHATS_INDEX: files[0] })
+  readerEnv = { HOME: directory, AGENTCHATS_INDEX: files[0] }
+  const middleware = readerApiMiddleware(readerEnv)
   server = createServer((request, response) => middleware(request, response, () => {
     response.statusCode = 404
     response.end()
@@ -154,4 +156,23 @@ test("API is local-origin, read-only, and non-cacheable", async () => {
   expect(response.status).toBe(200)
   expect(response.headers.get("cache-control")).toBe("no-store")
   expect(response.headers.get("access-control-allow-origin")).toBeNull()
+})
+
+
+test("the exact HTTPS portless origin is accepted, without trusting arbitrary forwarded hosts", async () => {
+  const headers = { Host: "agentchats.localhost", Origin: "https://agentchats.localhost", "X-Forwarded-Proto": "https" }
+  expect((await get("/api/threads", { headers })).response.status).toBe(403)
+  readerEnv.PORTLESS_URL = "https://agentchats.localhost"
+  expect((await get("/api/threads", { headers })).response.status).toBe(200)
+  expect((await get("/api/threads", { headers: { ...headers, Host: "agentchats.localhost:443" } })).response.status).toBe(200)
+  for (const override of [
+    { Host: "another.localhost" },
+    { Origin: "https://another.localhost" },
+    { Origin: "http://agentchats.localhost" },
+    { "X-Forwarded-Proto": "http" },
+    { "Sec-Fetch-Site": "cross-site" },
+    { Host: "attacker.example", "X-Forwarded-Host": "agentchats.localhost" },
+  ] as Record<string, string>[]) {
+    expect((await get("/api/threads", { headers: { ...headers, ...override } })).response.status).toBe(403)
+  }
 })

@@ -14,6 +14,7 @@ dest_dir="$HOME/.local/bin"
 repo_root=$(cd "$(dirname "$0")/.." && pwd)
 timeout_runner="$repo_root/scripts/run-with-timeout"
 index_timeout_seconds=1800
+reader_timeout_seconds=900
 installer_child_pid=
 
 usage() {
@@ -21,10 +22,10 @@ usage() {
 Usage: scripts/install.sh --install | --check
 
 Link the agentchats CLI and prepare its local session index over the
-local coding-agent session stores.
+local coding-agent session stores, and build the production web reader.
 
 Options:
-  --install  Link agentchats, install its dependencies, refresh the index
+  --install  Install dependencies, build the reader, link agentchats, refresh the index
   --check    Print the installation plan without changing the system
 EOF
 }
@@ -72,9 +73,12 @@ case "${1:-}" in
     --check)
         cat <<EOF
 agentchats:
-  bun on PATH is required (installed by AgentStart)
-  ln -sfn $repo_root/bin/agentchats $dest_dir/agentchats   # the agentchats CLI, linked editable
+  bun, Node.js 24+, and npm on PATH are required (installed by AgentStart)
   (cd $repo_root && bun install --frozen-lockfile)           # resolve the complete pinned CLI, TUI, and MCP dependencies before linking
+  npm --prefix $repo_root/web ci                           # reader + pinned portless dependencies
+  npm --prefix $repo_root/web run build                    # production assets; both reader steps bounded to ${reader_timeout_seconds}s
+  ln -sfn $repo_root/bin/agentchats $dest_dir/agentchats      # only after dependencies and build succeed
+  portless proxy setup and launchd ownership stay with AgentStart; serve never prompts for sudo
   scripts/run-with-timeout ${index_timeout_seconds}s ... agentchats index   # incremental when the index exists; safe to rerun
 EOF
         exit 0
@@ -98,6 +102,10 @@ esac
 [ "$(id -u)" -ne 0 ] || die "run as the target user, not root"
 command -v bun >/dev/null 2>&1 \
     || die "bun is required; install the AI stack with AgentStart first"
+command -v npm >/dev/null 2>&1 || die "npm is required to install the reader"
+command -v node >/dev/null 2>&1 || die "Node.js 24+ is required by portless"
+node -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 24 ? 0 : 1)' \
+    || die "Node.js 24+ is required by portless"
 [ -x "$timeout_runner" ] || die "timeout runner is missing or not executable: $timeout_runner"
 
 mkdir -p "$dest_dir"
@@ -108,6 +116,16 @@ export PATH="$dest_dir:$PATH"
 printf 'Installing frozen dependencies.\n'
 (cd "$repo_root" && bun install --frozen-lockfile) \
     || die "bun install --frozen-lockfile failed in $repo_root"
+
+# Prepare the production reader before changing the command link. Runtime
+# restarts only serve these assets; they do not install packages or rebuild.
+printf 'Preparing the production reader.\n'
+run_with_timeout "$reader_timeout_seconds" "reader dependencies" \
+    npm --prefix "$repo_root/web" ci \
+    || die "reader dependency install failed in $repo_root/web"
+run_with_timeout "$reader_timeout_seconds" "reader build" \
+    npm --prefix "$repo_root/web" run build \
+    || die "reader build failed in $repo_root/web"
 
 # The agentchats CLI is linked editable back into this checkout, the same
 # contract the other agent* checkouts use for their own CLIs.
@@ -122,4 +140,4 @@ run_with_timeout "$index_timeout_seconds" "agentchats index" \
     "$dest_dir/agentchats" index \
     || die "agentchats index failed; investigate with: agentchats index"
 
-printf 'agentchats is installed and its index is ready.\n'
+printf 'agentchats is installed; its index and production reader are ready.\n'

@@ -3,6 +3,7 @@ import { homedir } from "node:os"
 import path from "node:path"
 import { Database } from "bun:sqlite"
 
+import { isLocalReaderRequest } from "./local-origin.ts"
 import { indexedCodexSessions } from "./session-index.ts"
 import type { Environ } from "../../src/store/paths.ts"
 
@@ -402,10 +403,7 @@ export function readerApiMiddleware(env: Environ = process.env): Connect.NextHan
     }
 
     // This is a local reader of private history, including in Vite preview.
-    const host = request.headers.host ?? ""
-    if (!/^(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/i.test(host) ||
-        (request.headers.origin && request.headers.origin !== `http://${host}`) ||
-        request.headers["sec-fetch-site"] === "cross-site") {
+    if (!isLocalReaderRequest(request, env)) {
       sendJson(response, 403, { error: "The reader API is available only from its local origin." })
       return
     }

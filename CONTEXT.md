@@ -61,7 +61,7 @@ the first agent search works. _Avoid_: configure, setup.
 **agentchats CLI** — the CLI this repository owns end-to-end: `bin/agentchats`,
 linked editable into `~/.local/bin` by the installer. `index` builds and
 refreshes the session index; `search`, `sessions`, `view`, `expand`, and
-`resume` query it; `state` prints bearings. _Avoid_: cass wrapper, chats CLI
+`resume` query it; `state` prints bearings; `serve` runs the local web reader. _Avoid_: cass wrapper, chats CLI
 (the CLI owns its index outright now; it wraps nothing).
 
 **state dump** — the bearings section `agentchats state` prints for agents
@@ -74,5 +74,6 @@ command).
 agentchats and relocated from the approved Be Like Grok design. Initial scope
 is Codex: discovery through the shared session-index query layer, rich
 committed history and live polling through a Codex adapter. It follows the
-arthack web design, independently of the Signal Room TUI. _Avoid_: Be Like
-Grok service, agentchats serve (no such command is installed yet).
+arthack web design, independently of the Signal Room TUI. `agentchats serve`
+runs its production build under portless at `https://agentchats.localhost`;
+AgentStart owns launchd supervision. _Avoid_: Be Like Grok service.
