@@ -1,6 +1,6 @@
 # 4. Host-owned Agent interaction
 
-Status: Accepted
+Status: Partially superseded by [ADR 0007](0007-voice-inspection-and-optional-interruption.md)
 Date: 2026-09-13
 
 ## Context

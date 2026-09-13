@@ -5,10 +5,14 @@ import { mapCodexItem } from "../src/lib/api/codex"
 const envelope = (input: string, transcript?: string, source?: string) =>
   `<realtime_delegation>\n${source ? `  <source>${source}</source>\n` : ""}  <input>${input}</input>\n${transcript ? `  <transcript_delta>${transcript}</transcript_delta>\n` : ""}</realtime_delegation>`
 
-test("canonical voice handoffs decode once, show the actual request, and omit identical sole-user context", () => {
+test("canonical voice handoffs decode once and preserve voice context for inspection", () => {
   expect(
     parseCodexMessagePresentation(envelope("Copy this", "user:  Copy this")),
-  ).toEqual({ title: "Via Voice", body: "Copy this" })
+  ).toEqual({
+    title: "Via Voice",
+    body: "Copy this",
+    details: [{ label: "Voice context", content: "user:  Copy this" }],
+  })
   expect(
     parseCodexMessagePresentation(
       envelope(

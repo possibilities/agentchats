@@ -23,7 +23,7 @@ it (for example, `import '@fontsource-variable/geist-mono'`). Otherwise the syst
 monospace stack is used. The stylesheet does not download fonts or restyle the host.
 Pierre loads only when a file diff opens. Raw HTML in Markdown is not rendered.
 
-The 0.3.1 presentation puts Human input and Agent replies on the same left edge,
+The 0.3.2 presentation puts Human input and Agent replies on the same left edge,
 using a flat inset for Human input and open space for replies. Reading text is
 18px with 28px leading, message gaps are 24px (20px in narrow lanes), and prose
 is capped at 80ch.
@@ -85,8 +85,10 @@ roles remain `user`, `assistant`, `tool`, and `system`.
 User and assistant messages can carry `TranscriptMessage.presentation`, a provider-neutral
 `TranscriptMessagePresentation`: `{ title, body, details?: [{ label, content }] }`.
 Title, body and detail contents are plain text. `Transcript` and `TranscriptBlock`
-show the body, collapsible details, and **Original message** for the exact
-`message.content`. This metadata never overwrites the source record or changes
+show the body and preserve the exact `message.content`. Human **Via Voice**
+messages use an upper-right inspection button opening a modal with **Displayed
+text**, **Voice context**, and **Original message**. Other structured presentations
+retain their inline disclosures. This metadata never overwrites the source record or changes
 the Human / Agent author label.
 
 For Codex voice envelopes, the reader's adapter uses the exported helper:
@@ -101,8 +103,8 @@ const message = {
 ```
 
 Complete canonical `<realtime_delegation>` envelopes show the actual `input`
-under **Via Voice**, with `transcript_delta` in collapsed **Voice context**.
-Identical sole-user context is omitted from the summary. `transcript_tail_flush`
+under **Via Voice**, with `transcript_delta` retained in the inspection modal,
+including context that repeats the displayed request. `transcript_tail_flush`
 is labeled **Voice session ended**, with context and handoff instructions kept
 in separate disclosures. Standard `<realtime_conversation>` start/end notices
 also have readable summaries. XML entities are decoded once; no HTML is executed.
@@ -119,8 +121,10 @@ for source evidence and fallback boundaries.
 This is a package export for hosts. The product mounts it only in agentvoice's
 Agent pane, never its Voice pane or the agentchats reader UI.
 
-Render `TranscriptComposer` as a sibling below the scrollable `Transcript`, inside
-the same height-constrained flex column. Do not put it in the scrolling `footer`.
+Render `TranscriptComposer` as a sibling of the scrollable `Transcript`. A host
+can place it below the transcript or overlay it with measured footer clearance
+and a raised jump-to-latest control. Do not put the composer inside the scrolling
+`footer`.
 Use it only in lanes where the host can send Human input to the Agent.
 The placeholder identifies the field visually; `aria-label` names it accessibly.
 There is no repeated label above the box. Keyboard focus belongs to the whole
@@ -166,7 +170,9 @@ Shift+Enter adds a newline, and Cmd/Ctrl+Shift+Enter temporarily inverts the act
 mode. IME composition does not submit. `placeholder`, `defaultValue`, `className`
 and `aria-label` are optional; the default label is **Message Agent**.
 
-An empty active composer shows **Stop**, which only calls `onInterrupt`. Keep
+An empty active composer shows **Stop** when `onInterrupt` is supplied. Without
+that callback it shows a noninteractive **Working…** status, preserving follow-up
+input. Keep
 `stopping` true after the interrupt acknowledgment until the terminal event.
 `pending` describes an in-flight host request; `active` describes running agent
 work. Active work permits further input; pending/stopping prevent duplicate

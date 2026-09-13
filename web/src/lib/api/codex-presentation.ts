@@ -48,12 +48,10 @@ export function parseCodexMessagePresentation(
         ],
       }
     }
-    const soleUserContext = /^user:[ \t]*([^\r\n]*)$/.exec(transcript)
-    const duplicate = soleUserContext?.[1].trim() === input
     return {
       title: "Via Voice",
       body: input,
-      ...(transcript && !duplicate
+      ...(transcript
         ? { details: [{ label: "Voice context", content: transcript }] }
         : {}),
     }

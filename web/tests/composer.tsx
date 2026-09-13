@@ -32,6 +32,7 @@ function Consumer() {
     pending: false,
     stopping: false,
     disabled: false,
+    allowInterrupt: true,
   })
   const [queue, setQueue] = useState<TranscriptQueuedMessage[]>([])
   Object.assign(window, {
@@ -70,10 +71,10 @@ function Consumer() {
             await request("queue", text)
             setQueue((rows) => [...rows, { id: `q${rows.length + 1}`, text }])
           }}
-          onInterrupt={async () => {
+          onInterrupt={props.allowInterrupt ? async () => {
             await request("interrupt")
             setProps((value) => ({ ...value, stopping: true }))
-          }}
+          } : undefined}
           onSteerQueued={async (id) => {
             await request("steerQueued", id)
             setQueue((rows) => rows.filter((row) => row.id !== id))

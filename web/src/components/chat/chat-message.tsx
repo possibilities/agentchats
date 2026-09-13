@@ -2,6 +2,7 @@ import { memo } from "react"
 import { FileChangeMessage } from "@/components/chat/file-change-message"
 import { MessageBody } from "@/components/chat/message-body"
 import { ToolActivityMessage } from "@/components/chat/tool-activity-message"
+import { VoiceMessageModal } from "@/components/chat/voice-message-modal"
 import { Bubble, BubbleContent } from "@/components/ui/bubble"
 import {
   Message as MessageRow,
@@ -24,9 +25,11 @@ export const ChatMessage = memo(function ChatMessage({
     )
   }
   const isUser = message.role === "user"
+  const isVoiceHandoff =
+    isUser && message.presentation?.title === "Via Voice"
   return (
     <MessageRow align="start" data-role={message.role}>
-      <MessageContent>
+      <MessageContent className={isVoiceHandoff ? "voice-message" : undefined}>
         <MessageHeader>
           <span className="message-author">{isUser ? "Human" : "Agent"}</span>
           {message.createdAt ? (
@@ -46,6 +49,12 @@ export const ChatMessage = memo(function ChatMessage({
             <MessageBody message={message} />
           </BubbleContent>
         </Bubble>
+        {isVoiceHandoff && message.presentation ? (
+          <VoiceMessageModal
+            presentation={message.presentation}
+            original={message.content}
+          />
+        ) : null}
       </MessageContent>
     </MessageRow>
   )

@@ -20,6 +20,9 @@ records provider-owned envelope interpretation and preserved original messages.
 source reads and stateless decision/acceptance receipts retained only by native
 history. It adds no transcript archive or index retention policy.
 
+[0007: Voice inspection and optional interruption](0007-voice-inspection-and-optional-interruption.md)
+records modal Human voice inspection and passive progress for hosts without Stop.
+
 ## Withdrawn viewer experiment
 
 The earlier `0001-viewer-on-vendored-opencode-renderer.md` belonged to a

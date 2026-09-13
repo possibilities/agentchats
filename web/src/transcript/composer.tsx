@@ -1,5 +1,5 @@
 import { useId, useRef, useState } from "react"
-import { ArrowUpIcon, ChevronDownIcon, SquareIcon } from "lucide-react"
+import { ArrowUpIcon, ChevronDownIcon, LoaderCircleIcon, SquareIcon } from "lucide-react"
 import { cn } from "cn"
 import { Button } from "../components/ui/button"
 import {
@@ -46,6 +46,7 @@ export interface TranscriptComposerProps {
   onSend?: (text: string) => ActionResult
   onSteer?: (text: string) => ActionResult
   onQueue?: (text: string) => ActionResult
+  /** Omit to show noninteractive working status instead of Stop. */
   onInterrupt?: () => ActionResult
   /** Host-owned FIFO. This component never drains or retries it automatically. */
   queue?: readonly TranscriptQueuedMessage[]
@@ -319,7 +320,7 @@ function Composer({
               ) : onSteer || onQueue ? (
                 <DropdownMenu>
                   <DropdownMenuTrigger
-                    render={<InputGroupButton />}
+                    render={<InputGroupButton className="transcript-composer__mode" />}
                     disabled={unavailable}
                     aria-label="Follow-up behavior"
                   >
@@ -366,11 +367,16 @@ function Composer({
                 </DropdownMenu>
               ) : null}
               <span className="transcript-composer__status" role="status">
-                {stopping
+                {stopping && onInterrupt
                   ? "Stopping…"
                   : (operation ?? (pending ? "Sending…" : ""))}
               </span>
-              {showStop || stopping ? (
+              {(showStop || stopping) && !onInterrupt ? (
+                <span className="transcript-composer__progress" role="status">
+                  <LoaderCircleIcon aria-hidden="true" />
+                  {stopping ? "Stopping…" : "Working…"}
+                </span>
+              ) : showStop || stopping ? (
                 <InputGroupButton
                   size="sm"
                   variant="secondary"
