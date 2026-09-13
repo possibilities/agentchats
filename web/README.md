@@ -106,7 +106,8 @@ this machine's history.
 - Conversations open at the latest message, including idle agents and with Watch
   off. **Watch live** polls committed items about once per second, appends unseen
   messages, and follows the live edge. Scrolling away releases following;
-  **Jump to latest** returns. Disclosure state and scroll position survive
+  **N new messages** counts arrivals while away; activating the chip returns to
+  the latest message, clears the count, and resumes following. Disclosure state and scroll position survive
   polling. A failed read keeps the last conversation and offers Retry.
 
 

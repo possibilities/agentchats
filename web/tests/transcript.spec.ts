@@ -251,10 +251,12 @@ test("thread retry works and live updates respect a reader who scrolls away", as
     .locator(viewport)
     .evaluate((element) => element.scrollTop)
   expect(Math.abs(after - before)).toBeLessThan(5)
-  await page.getByRole("button", { name: "Jump to latest" }).click()
+  await page.getByRole("button", { name: "1 new message. Jump to latest", exact: true }).click()
   await expect(
     page.getByText("An update while reading earlier messages."),
   ).toBeInViewport()
+  state.live = [item(106, "agentMessage", { text: "Following after jumping." })]
+  await expect(page.getByText("Following after jumping.", { exact: true })).toBeInViewport()
 })
 
 for (const working of [false, true]) {

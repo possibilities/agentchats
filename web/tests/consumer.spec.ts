@@ -130,3 +130,23 @@ test("an unavailable source can retry without restarting the other transcript la
       .getByRole("alert"),
   ).toContainText("No transcript server")
 })
+
+test("polling lanes show independent unread chips and resume after a jump", async ({ page }) => {
+  await page.goto("/tests/consumer.html")
+  const agent = page.getByRole("region", { name: "agent lane", exact: true })
+  const viewport = agent.getByRole("region", { name: "agent transcript", exact: true })
+  await expect.poll(() => viewport.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop)).toBeLessThan(2)
+  await viewport.hover()
+  await page.mouse.wheel(0, -900)
+  await expect(agent.getByRole("button", { name: "Jump to latest", exact: true })).toHaveAttribute("data-active", "true")
+  await page.evaluate(() => {
+    ;(window as any).consumerState.live = [
+      { id: "unread", role: "assistant", content: "Polling unread", status: "complete" },
+    ]
+  })
+  await expect(agent.getByRole("button", { name: "1 new message. Jump to latest", exact: true })).toBeVisible()
+  await expect(page.getByRole("region", { name: "voice lane", exact: true }).getByRole("button", { name: /new message/ })).toHaveCount(0)
+  await agent.getByRole("button", { name: "1 new message. Jump to latest", exact: true }).click()
+  await expect.poll(() => viewport.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop)).toBeLessThan(2)
+  await expect(agent.getByRole("button", { name: /new message/ })).toHaveCount(0)
+})

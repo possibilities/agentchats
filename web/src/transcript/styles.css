@@ -12,7 +12,8 @@
 @source "../components/ui/tooltip.tsx";
 @custom-variant dark (&:is(.dark *));
 
-.agentchats-transcript {
+.agentchats-transcript,
+:scope.agentchats-transcript {
   color: var(--text);
   background: var(--canvas);
   font-family: var(--font-sans);

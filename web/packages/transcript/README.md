@@ -30,7 +30,7 @@ import '@agentchats/transcript/styles.css'
 
 export function Lane({ id, messages }: { id: string; messages: readonly TranscriptMessage[] }) {
   return <div style={{ height: 600, display: 'flex', minWidth: 0 }}>
-    <Transcript transcriptId={id} messages={messages} showJumpToLatest={false} />
+    <Transcript transcriptId={id} messages={messages} />
   </div>
 }
 ```
@@ -41,7 +41,15 @@ The host owns loading/error copy, titles, and controls. `aria-label` names each
 lane; `viewportId` supplies a unique DOM anchor if needed. Constrain the parent's
 height so the transcript can scroll. Changing `transcriptId`, detail, or loading
 completion resets to the bottom. Idle and working transcripts behave identically.
-Scrolling away releases following; the optional jump button resumes it. Rendering
+Within 64 pixels of the bottom, new messages and growing same-ID revisions stay
+at the end. Scrolling farther away preserves the reader's place and shows
+**1 new message** / **N new messages**, counting newly added visible message IDs
+(including individual activities in Full). Revisions do not increase the count.
+The chip jumps to the end immediately, clears the count, and resumes follow;
+scrolling back to the bottom also clears it. Each transcript owns its count.
+`showJumpToLatest` defaults to true; set false only when the host supplies its own
+navigation. `follow={false}` disables automatic following while retaining the
+manual jump and unread count. Rendering
 a new array with stable IDs preserves tool and diff disclosures during updates.
 
 For a host-owned list or virtualizer, render `TranscriptBlock` for each result of
@@ -64,7 +72,7 @@ export function LiveLane({ threadId }: { threadId: string }) {
   return <>
     {error ? <p role="alert">{error.message} <button onClick={retry}>Retry</button></p> : null}
     <Transcript transcriptId={threadId} messages={snapshot?.messages ?? []}
-      loading={loading} showJumpToLatest={false} />
+      loading={loading} />
   </>
 }
 ```

@@ -93,10 +93,32 @@ function Lane({ id, watch }: { id: string; watch: boolean }) {
         transcriptId={id}
         messages={snapshot?.messages ?? []}
         loading={loading}
-        showJumpToLatest={false}
         aria-label={`${id} transcript`}
       />
     </section>
+  )
+}
+
+function DirectConsumer() {
+  const [messages, setMessages] = useState(initial)
+  const [id, setId] = useState("direct")
+  const [detail, setDetail] = useState<"messages" | "full">("messages")
+  const [loading, setLoading] = useState(false)
+  const [follow, setFollow] = useState(true)
+  Object.assign(window, {
+    directTranscript: { setMessages, setId, setDetail, setLoading, setFollow },
+  })
+  return (
+    <div style={{ height: 500, display: "flex", flexDirection: "column" }}>
+      <Transcript
+        transcriptId={id}
+        messages={messages}
+        detail={detail}
+        loading={loading}
+        follow={follow}
+        aria-label="Direct transcript"
+      />
+    </div>
   )
 }
 function Consumer() {
@@ -134,4 +156,6 @@ function Consumer() {
     </>
   )
 }
-createRoot(document.getElementById("consumer")!).render(<Consumer />)
+createRoot(document.getElementById("consumer")!).render(
+  new URLSearchParams(location.search).has("direct") ? <DirectConsumer /> : <Consumer />,
+)
