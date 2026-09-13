@@ -165,11 +165,11 @@ describe("Chats producer MCP", () => {
     expect(value(indexed).indexed).toBe(1);
   }
 
-  test("discovers nine producer tools and the authored guide without opening the index", async () => {
+  test("discovers producer tools and the authored guide without opening the index", async () => {
     const wire = await peer();
     const { tools } = await wire.request<{ tools: Tool[] }>("tools/list");
     expect(tools.map((tool) => tool.name)).toEqual(CONTRACT.commands.filter((command) => command.audience === "agent").map((command) => command.name));
-    expect(tools).toHaveLength(9);
+    expect(tools).toHaveLength(11);
     for (const tool of tools) {
       expect(tool.inputSchema.additionalProperties).toBe(false);
       for (const hidden of ["json", "current", "include-auxiliary", "HOME", "db", "shell"]) expect(tool.inputSchema.properties).not.toHaveProperty(hidden);
@@ -178,6 +178,18 @@ describe("Chats producer MCP", () => {
     expect(tools.find((tool) => tool.name === "index")?.annotations?.destructiveHint).toBe(true);
     expect(tools.find((tool) => tool.name === "status")?.annotations?.readOnlyHint).toBe(false);
     expect(value(await wire.call("guide")).data).toEqual(CONTRACT);
+    const receipt = { schema_version: 1, kind: "decision", decision_id: "direct-1", action: "direct",
+      task: "Inspect a local source", reason: "Short coupled inspection", requested: { model: null, effort: null, context: null, service_tier: null }, evidence_refs: [] };
+    const formatted = await wire.call("routing-receipt", { receipt: JSON.stringify(receipt) });
+    expect(formatted.isError).not.toBe(true);
+    expect(value(formatted)).toEqual({ routing_receipt: receipt });
+    expect((await wire.call("routing-receipt", { receipt: JSON.stringify({ ...receipt, secret: "reject" }) })).isError).toBe(true);
+    const native = join(directory, ".codex/sessions/rollout-stamp-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.jsonl");
+    writeFileSync(native, JSON.stringify({ type: "session_meta", payload: { source: "cli" } }) + "\n");
+    const inspected = await wire.call("routing", { source_path: native });
+    expect(inspected.isError).not.toBe(true);
+    expect(value(inspected).coverage.retention).toBe("native_sources_only");
+    expect(value(inspected).total).toBe(0);
     expect(existsSync(join(directory, "index.db"))).toBe(false);
     expect((await wire.call("mcp")).isError).toBe(true);
     await wire.stop();

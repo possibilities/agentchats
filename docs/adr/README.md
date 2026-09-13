@@ -16,6 +16,10 @@ records the desktop-style composer and host-owned queue/steer/interrupt boundary
 [0005: Structured transcript presentation](0005-structured-transcript-presentation.md)
 records provider-owned envelope interpretation and preserved original messages.
 
+[0006: Derived routing evidence](0006-derived-routing-evidence.md) records bounded
+source reads and stateless decision/acceptance receipts retained only by native
+history. It adds no transcript archive or index retention policy.
+
 ## Withdrawn viewer experiment
 
 The earlier `0001-viewer-on-vendored-opencode-renderer.md` belonged to a

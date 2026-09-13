@@ -13,8 +13,11 @@ the path from transcript to search result and conversation reader:
 - `src/store/` — the SQLite+FTS5 schema, ingest (parse, normalize, write;
   incremental and retention-aware), and the query layer search reads from.
 - `src/cli/` — the `agentchats` command surface: `index`, `status`,
-  `search`, `sessions`, `view`, `expand`, `resume`, `state`, `guide`, and the operator `serve`, plus
+  `search`, `sessions`, `view`, `expand`, `routing`, `routing-receipt`,
+  `resume`, `state`, `guide`, and the operator `serve`, plus
   the in-process stdio MCP adapter.
+- `src/routing/` — bounded reads of exact native rollouts and stateless authored
+  receipt validation; native history retains evidence, with no second store.
 - `web/` — the local React/Vite conversation reader; agentchats session
   discovery with a Codex committed-history adapter. See `web/README.md`.
 - `src/tui/` — the Signal Room resume picker (bun + OpenTUI) behind

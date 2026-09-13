@@ -1,12 +1,12 @@
 /** A command that runs this tool, or the one it replaced. A subcommand is
  * required so prose that merely names agentchats remains searchable. */
 const SELF_INVOCATION =
-  /\b(?:agentchats|cass)\s+(?:search|sessions|state|view|expand|resume|index|status|guide|triage|pack)\b/;
+  /\b(?:agentchats|cass)\s+(?:search|sessions|state|view|expand|resume|index|status|guide|routing(?!-receipt\b)|triage|pack)\b/;
 
 // Native MCP and historical aggregator call spellings. Test calls,
 // not mentions of the integration, so unrelated discovery and prose survive.
-const SELF_NATIVE_MCP = /\bmcp__agentchats__(?:search|sessions|state|view|expand|resume|index|status|guide)\b/;
-const SELF_EXECUTOR = /\btools\s*(?:\[\s*["'](?:tools\.)?agentchats\.[\w-]+\.[\w-]+\.(?:search|sessions|state|view|expand|resume|index|status|guide)["']\s*\]|\.agentchats\.[\w-]+\.[\w-]+\.(?:search|sessions|state|view|expand|resume|index|status|guide))\s*\(/;
+const SELF_NATIVE_MCP = /\bmcp__agentchats__(?:search|sessions|state|view|expand|resume|index|status|guide|routing(?![-_]receipt\b))\b/;
+const SELF_EXECUTOR = /\btools\s*(?:\[\s*["'](?:tools\.)?agentchats\.[\w-]+\.[\w-]+\.(?:search|sessions|state|view|expand|resume|index|status|guide|routing(?![-_]receipt\b))["']\s*\]|\.agentchats\.[\w-]+\.[\w-]+\.(?:search|sessions|state|view|expand|resume|index|status|guide|routing(?![-_]receipt\b)))\s*\(/;
 
 function containsInvocation(value: string): boolean {
   return SELF_INVOCATION.test(value) || SELF_NATIVE_MCP.test(value) || SELF_EXECUTOR.test(value);

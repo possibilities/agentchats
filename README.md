@@ -109,8 +109,10 @@ See [the reader guide](web/README.md) for data sources and limitations, and
 
 ## MCP for agents
 
-AgentStart supplies `agentchats mcp` directly to managed harness sessions. The nine tools are `index`,
-`status`, `search`, `sessions`, `view`, `expand`, `resume`, `state`, and `guide`.
+AgentStart supplies `agentchats mcp` directly to managed harness sessions. The tools are `index`,
+`status`, `search`, `sessions`, `view`, `expand`, `routing`, `routing-receipt`,
+`resume`, `state`, and `guide`. [Routing evidence](docs/routing.md) uses exact
+native source reads and stateless receipt output; it creates no archive or index.
 Their arguments and terminal help derive from `src/cli/contract.ts`; MCP calls
 the shared handlers directly without shell commands or stdout capture.
 

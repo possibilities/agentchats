@@ -78,3 +78,13 @@ arthack web design, independently of the Signal Room TUI. `agentchats serve`
 runs Vite dev with HMR under portless at `https://agentchats.localhost`
 (`--production` serves the prepared build);
 AgentStart owns launchd supervision. _Avoid_: Be Like Grok service.
+
+**Routing receipt** — bounded authored decision or parent-acceptance JSON
+returned by `routing-receipt` and retained only if the native transcript records
+that tool result. It is a claim with evidence refs, not runtime telemetry or an
+approval. _Avoid_: hidden reasoning, golden label, routing database.
+
+**Routing inspection** — the on-demand `routing` read of exact original Codex
+rollouts. It joins requests, receipts and native configuration/ancestry while
+retaining source citations and unknowns. It opens no session index and stores no
+transcript copy. _Avoid_: routing archive, background collector.

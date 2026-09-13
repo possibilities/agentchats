@@ -62,6 +62,24 @@ For a broad inventory, use an empty query with filters and `aggregate` such as
 For query syntax, field choices, recipes, and storage behavior, read
 [search and evidence](references/search-and-evidence.md).
 
+## Routing evidence
+
+`routing` reads exact uncompressed Codex rollout paths without opening the
+index. Supply `source_path`, optionally `related` as a JSON array of up to 16
+exact child paths, and a small `limit`. It joins original spawn/follow-up calls,
+native ancestry and turn configurations with explicit decision/acceptance
+receipts. Preserve source citations, unknowns and the output's coverage limits:
+child-thread history is not per-assignment or backend execution proof.
+
+`routing-receipt` validates a bounded decision or acceptance JSON string in
+`receipt` and returns it as tool output. It stores no log; the harness's existing
+transcript can retain the result. Use it when routing capture is requested or
+required by the role: record before a substantive direct/delegation/reuse choice,
+then record the parent's acceptance after checking evidence. Keep reasons short,
+with refs instead of private bodies. The guide owns the strict schema. No new
+retention policy, training export or inference is implied. For details, see
+[routing evidence](references/routing.md).
+
 ## Results and handoff
 
 Most tools preserve their existing command-specific JSON object in

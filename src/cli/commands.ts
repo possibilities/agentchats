@@ -1,3 +1,5 @@
+import { readRouting } from "../routing/read.ts";
+import { receiptResult } from "../routing/receipt.ts";
 import { resolve } from "node:path";
 import type { Database } from "bun:sqlite";
 import { daysAgo, integer, type Parsed, resolveWhen, UsageError } from "./args.ts";
@@ -505,11 +507,34 @@ function result(
   return { value, ...(human ? { human } : {}), exitCode };
 }
 
+async function commandRouting(parsed: Parsed, _env: Record<string, string | undefined>, context: CommandContext): Promise<CommandOutput> {
+  if (parsed.positional.length !== 1) throw new UsageError("routing needs exactly one source path");
+  const limit = integer(parsed, "limit", 20);
+  const offset = integer(parsed, "offset", 0);
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 50 || !Number.isSafeInteger(offset) || offset < 0) throw new UsageError("routing needs --limit 1..50 and a safe nonnegative --offset");
+  let related: unknown;
+  try { related = JSON.parse(parsed.values["related"] ?? "[]"); } catch { throw new UsageError("--related must be a JSON array of absolute rollout paths"); }
+  if (!Array.isArray(related) || related.length > 16 || related.some((path) => typeof path !== "string")) throw new UsageError("--related must contain at most 16 paths");
+  try { return result(await readRouting([parsed.positional[0]!, ...related as string[]], limit, offset, context.signal)); }
+  catch (error) {
+    context.signal?.throwIfAborted();
+    throw new CliError("routing-unavailable", error instanceof Error ? error.message : "Routing source unavailable", "Use exact readable uncompressed Codex rollout paths within the documented bounds.");
+  }
+}
+
+function commandRoutingReceipt(parsed: Parsed): CommandOutput {
+  if (parsed.positional.length || parsed.values["receipt"] === undefined) throw new UsageError("routing-receipt needs --receipt JSON and no positional arguments");
+  try { return result(receiptResult(parsed.values["receipt"])); }
+  catch { throw new UsageError("Invalid routing receipt; use the strict decision or acceptance schema in agentchats routing-receipt --help (8 KiB maximum)"); }
+}
+
 const COMMANDS: Record<string, (
   parsed: Parsed,
   env: Record<string, string | undefined>,
   context: CommandContext,
 ) => CommandOutput | Promise<CommandOutput>> = {
+  routing: commandRouting,
+  "routing-receipt": commandRoutingReceipt,
   index: commandIndex,
   status: commandStatus,
   search: commandSearch,
