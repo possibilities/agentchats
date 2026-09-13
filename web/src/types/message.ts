@@ -8,9 +8,11 @@ export type MessageStatus =
 
 export interface ToolActivity {
   name: string
+  /** Full summary text; the disclosure clips it visually and exposes it on expand. */
   detail: string
   state: "queued" | "running" | "complete" | "error"
   meta?: string
+  /** Complete payloads, without preview truncation. */
   sections?: ToolDetailSection[]
 }
 

@@ -13,7 +13,18 @@ export function ToolActivityMessage({ message }: { message: Message }) {
   const [open, setOpen] = useState(false)
   const activity = message.toolActivity
   const isError = message.status === "error"
-  const hasDetails = Boolean(activity?.sections?.length)
+  const summary = activity?.detail || message.content
+  const sections = activity?.sections?.filter((section) => section.content.trim()) ?? []
+  const hasPayload = sections.length > 0
+  // A host may supply only a full summary (or summary + output, as agentvoice
+  // does for commands). CSS ellipsis must never be its only reading surface.
+  if (summary.trim() && !sections.some((section) => section.content.includes(summary))) {
+    sections.unshift({ label: activity?.name ?? "Details", content: summary })
+  }
+  if (!hasPayload && message.content.trim() && message.content !== summary) {
+    sections.push({ label: "Content", content: message.content })
+  }
+  const hasDetails = sections.length > 0
 
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
@@ -31,7 +42,7 @@ export function ToolActivityMessage({ message }: { message: Message }) {
               {isError ? "Failed · " : ""}{activity?.name ?? "Tool"}
             </span>
             <span className="tool-disclosure__summary">
-              {activity?.detail ?? message.content}
+              {summary}
             </span>
             {activity?.meta ? (
               <span className="tool-disclosure__meta">{activity.meta}</span>
@@ -42,8 +53,8 @@ export function ToolActivityMessage({ message }: { message: Message }) {
           </CollapsibleTrigger>
           {hasDetails ? (
             <CollapsibleContent className="tool-disclosure__content">
-              {activity?.sections?.map((section) => (
-                <section key={section.label} className="tool-detail">
+              {sections.map((section, index) => (
+                <section key={`${section.label}:${index}`} className="tool-detail">
                   <h4>{section.label}</h4>
                   <pre tabIndex={0} aria-label={section.label}>{section.content}</pre>
                 </section>

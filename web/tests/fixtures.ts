@@ -118,7 +118,7 @@ export const items = [
 
 export async function mockHistory(
   page: Page,
-  options: { empty?: boolean; long?: boolean; threadDelay?: number; working?: boolean; markdownTitle?: boolean } = {},
+  options: { empty?: boolean; long?: boolean; threadDelay?: number; working?: boolean; markdownTitle?: boolean; items?: CodexThreadItemRecord[] } = {},
 ) {
   const listed = options.markdownTitle
     ? sessions.map((session) => ({ ...session, title: "# A **Markdown** task\n\n## Goal\n- Preserve real newlines.\n- Keep the full message.\n\nUse `code` and [links](https://example.test)." }))
@@ -160,7 +160,7 @@ export async function mockHistory(
       ? []
       : isPoll
         ? state.live
-        : [...items, ...state.live]
+        : [...(options.items ?? items), ...state.live]
     if (options.markdownTitle && !isPoll)
       source = [item(0, "userMessage", { content: [{ text: listed[0].title }] }), ...source.slice(1)]
     if (options.long && !isPoll)

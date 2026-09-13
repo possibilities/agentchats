@@ -27,9 +27,6 @@ const FULL_ITEM_TYPES = [
   "mcpToolCall",
   "webSearch",
 ] as const
-const MAX_FILE_DIFF_CHARS = 200_000
-const MAX_COMMAND_CHARS = 12_000
-const MAX_TOOL_DETAIL_CHARS = 40_000
 
 interface StateThreadRow {
   id: string
@@ -75,18 +72,13 @@ function isObject(value: unknown): value is JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
-function boundedText(value: unknown, maximum = MAX_TOOL_DETAIL_CHARS) {
-  if (typeof value !== "string") return undefined
-  return value.length > maximum ? `${value.slice(0, maximum)}\n… output truncated` : value
+function textValue(value: unknown) {
+  return typeof value === "string" ? value : undefined
 }
 
-function boundedJson(value: unknown) {
+function jsonText(value: unknown) {
   if (value === undefined || value === null) return undefined
-  try {
-    return boundedText(JSON.stringify(value, null, 2))
-  } catch {
-    return boundedText(String(value))
-  }
+  return JSON.stringify(value, null, 2)
 }
 
 function sanitizeItem(itemType: string, value: unknown): unknown {
@@ -107,9 +99,9 @@ function sanitizeItem(itemType: string, value: unknown): unknown {
 
   if (itemType === "commandExecution") {
     return {
-      command: boundedText(value.command, MAX_COMMAND_CHARS),
-      cwd: boundedText(value.cwd, 2_000),
-      output: boundedText(value.aggregatedOutput),
+      command: textValue(value.command),
+      cwd: textValue(value.cwd),
+      output: textValue(value.aggregatedOutput),
       status: value.status,
       exitCode: value.exitCode,
       durationMs: value.durationMs,
@@ -131,8 +123,8 @@ function sanitizeItem(itemType: string, value: unknown): unknown {
                       kind && typeof kind.move_path === "string"
                         ? kind.move_path
                         : undefined,
-                    diff: diff.slice(0, MAX_FILE_DIFF_CHARS),
-                    diffTruncated: diff.length > MAX_FILE_DIFF_CHARS,
+                    diff,
+                    diffTruncated: false,
                   },
                 ]
               })()
@@ -148,9 +140,9 @@ function sanitizeItem(itemType: string, value: unknown): unknown {
       tool: value.tool,
       status: value.status,
       durationMs: value.durationMs,
-      argumentsText: boundedJson(value.arguments),
-      resultText: boundedJson(value.result),
-      errorText: boundedJson(value.error),
+      argumentsText: jsonText(value.arguments),
+      resultText: jsonText(value.result),
+      errorText: jsonText(value.error),
     }
   }
 
@@ -158,8 +150,8 @@ function sanitizeItem(itemType: string, value: unknown): unknown {
     return {
       query: value.query,
       resultCount: Array.isArray(value.results) ? value.results.length : 0,
-      actionText: boundedJson(value.action),
-      resultsText: boundedJson(value.results),
+      actionText: jsonText(value.action),
+      resultsText: jsonText(value.results),
     }
   }
 

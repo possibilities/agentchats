@@ -52,6 +52,14 @@ navigation. `follow={false}` disables automatic following while retaining the
 manual jump and unread count. Rendering
 a new array with stable IDs preserves tool and diff disclosures during updates.
 
+Supply full text in `toolActivity.detail` and complete payloads in `sections`.
+The collapsed row applies visual ellipsis; expansion exposes both the detail
+and the sections, without duplicating detail already present in a section.
+Tools without sections can still expand to read their detail and message content.
+Expanded text preserves whitespace, wraps long lines, and scrolls within each
+section. The Codex source retains full commands, search queries, and MCP payloads
+returned by the reader API.
+
 For a host-owned list or virtualizer, render `TranscriptBlock` for each result of
 `groupTranscript(messages)`. A block is either a prose message or a consecutive
 activity run; its ID is the first message ID. Both components include their own

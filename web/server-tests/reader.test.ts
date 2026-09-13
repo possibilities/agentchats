@@ -7,6 +7,7 @@ import path from "node:path"
 
 import { createSchema } from "../../src/store/schema.ts"
 import { readerApiMiddleware } from "../server/reader-api.ts"
+import { createCodexTranscriptSource } from "../src/transcript/codex"
 
 let directory: string
 let base: string
@@ -122,9 +123,9 @@ test("deep links and follow read Codex before a session has been indexed", async
   expect(messages.body.turnStatus).toBe("completed")
   const full = (await get("/api/threads/indexed?detail=full")).body
   expect(full.items.map((record: any) => record.itemType)).toEqual(["userMessage", "commandExecution", "fileChange"])
-  expect(full.items[1].item.output).toEndWith("… output truncated")
-  expect(full.items[2].item.changes[0].diff).toHaveLength(200_000)
-  expect(full.items[2].item.changes[0].diffTruncated).toBe(true)
+  expect(full.items[1].item.output).toBe("x".repeat(50_000))
+  expect(full.items[2].item.changes[0].diff).toBe("x".repeat(200_001))
+  expect(full.items[2].item.changes[0].diffTruncated).toBe(false)
   expect(files.map((file) => readFileSync(file))).toEqual(before)
   expect((await get("/api/threads/indexed/items?after_ordinal=-1")).body.items).toHaveLength(1)
   item(4, "agentMessage", { text: "New committed reply" })
@@ -132,6 +133,56 @@ test("deep links and follow read Codex before a session has been indexed", async
   expect(update.items.map((record: any) => record.rolloutOrdinal)).toEqual([4])
   expect(update.latestOrdinal).toBe(4)
   expect((await get("/api/threads/indexed/items?after_ordinal=4")).body.items).toEqual([])
+})
+
+test("full tool payloads survive committed storage, HTTP, and the shared Codex source on load and poll", async () => {
+  thread("indexed")
+  const command = `  cat <<'END'\n${"command body\n".repeat(1_100)}COMMAND_TAIL\nEND\n`
+  const cwd = `/workspace/${"nested/".repeat(300)}CWD_TAIL`
+  const output = `  ${"output line\n".repeat(4_000)}OUTPUT_TAIL\n\n`
+  const args = { prompt: "argument ".repeat(5_001) + "ARGUMENT_TAIL", enabled: false, count: 0 }
+  const result = { content: [{ type: "text", text: "result ".repeat(6_000) + "RESULT_TAIL" }], structuredContent: { ok: true } }
+  const error = { message: "failure ".repeat(5_001) + "ERROR_TAIL" }
+  const query = `  ${"long search query ".repeat(30)}QUERY_TAIL\n`
+  const action = { type: "search", queries: [query, "secondary ".repeat(4_001) + "ACTION_TAIL"] }
+  const results = [{ url: "https://example.test", snippet: "snippet ".repeat(5_001) + "SEARCH_RESULT_TAIL" }]
+  item(0, "commandExecution", { command, cwd, aggregatedOutput: output, status: "completed", exitCode: 0 })
+  item(1, "mcpToolCall", { server: "fixtures", tool: "inspect", arguments: args, result, error, status: "failed" })
+  item(2, "webSearch", { query, action, results })
+  item(3, "webSearch", { query })
+  item(4, "mcpToolCall", { server: "fixtures", tool: "empty", arguments: {}, result: null, error: null })
+
+  const source = createCodexTranscriptSource({ baseUrl: `${base}/api` })
+  const options = { id: "indexed", detail: "full" as const, signal: new AbortController().signal }
+  const loaded = await source.load(options)
+  const polled = await source.poll({ ...options, cursor: "-1" })
+  for (const snapshot of [loaded, polled]) {
+    const tools = snapshot.messages.map((message) => message.toolActivity!)
+    expect(tools[0]!.detail).toBe(command)
+    expect(tools[0]!.sections).toEqual([
+      { label: "Command", content: command },
+      { label: "Working directory", content: cwd },
+      { label: "Output", content: output },
+    ])
+    expect(tools[1]!.state).toBe("error")
+    expect(tools[1]!.sections).toEqual([
+      { label: "Tool", content: "fixtures.inspect" },
+      { label: "Arguments", content: JSON.stringify(args, null, 2) },
+      { label: "Result", content: JSON.stringify(result, null, 2) },
+      { label: "Error", content: JSON.stringify(error, null, 2) },
+    ])
+    expect(tools[2]!.detail).toBe(query)
+    expect(tools[2]!.sections).toEqual([
+      { label: "Query", content: query },
+      { label: "Action", content: JSON.stringify(action, null, 2) },
+      { label: "Results", content: JSON.stringify(results, null, 2) },
+    ])
+    expect(tools[3]!.sections).toEqual([{ label: "Query", content: query }])
+    expect(tools[4]!.sections).toEqual([
+      { label: "Tool", content: "fixtures.empty" },
+      { label: "Arguments", content: "{}" },
+    ])
+  }
 })
 
 test("missing or archived threads return 404, including polling and bound hostile IDs", async () => {

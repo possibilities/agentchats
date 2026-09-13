@@ -57,8 +57,8 @@ function basename(value: string) {
 }
 
 function detailSection(label: string, content: unknown): ToolDetailSection[] {
-  const text = stringValue(content).trim()
-  return text ? [{ label, content: text }] : []
+  const text = stringValue(content)
+  return text.trim() ? [{ label, content: text }] : []
 }
 
 function sessionStatus(status: CodexTurnStatus | null): SessionStatus {
@@ -106,7 +106,7 @@ function commandActivity(item: JsonObject): { content: string; activity: ToolAct
     content: `Ran ${inlineCode(compact(command))} · ${result}`,
     activity: {
       name: "Command",
-      detail: compact(command, 110),
+      detail: command,
       meta: result,
       state,
       sections: [
@@ -156,16 +156,18 @@ function fileActivity(item: JsonObject): {
 function mcpActivity(item: JsonObject): { content: string; activity: ToolActivity } {
   const server = stringValue(item.server) || "MCP"
   const tool = stringValue(item.tool) || "tool"
+  const toolName = `${server}.${tool}`
   const duration = numberValue(item.durationMs)
   const detail = duration === undefined ? server : `${server} · ${duration} ms`
   return {
-    content: `Called ${inlineCode(`${server}.${tool}`)}`,
+    content: `Called ${inlineCode(toolName)}`,
     activity: {
       name: "MCP",
-      detail: `${server}.${tool}`,
+      detail: toolName,
       meta: detail,
       state: toolState(item),
       sections: [
+        ...detailSection("Tool", toolName),
         ...detailSection("Arguments", item.argumentsText),
         ...detailSection("Result", item.resultText),
         ...detailSection("Error", item.errorText),
@@ -175,17 +177,18 @@ function mcpActivity(item: JsonObject): { content: string; activity: ToolActivit
 }
 
 function searchActivity(item: JsonObject): { content: string; activity: ToolActivity } {
-  const query = compact(stringValue(item.query) || "Web search")
+  const query = stringValue(item.query) || "Web search"
   const results = numberValue(item.resultCount) ?? 0
   const detail = results ? `${results} results` : "search"
   return {
-    content: `Searched for ${inlineCode(query)}`,
+    content: `Searched for ${inlineCode(compact(query))}`,
     activity: {
       name: "Web",
       detail: query,
       meta: detail,
       state: toolState(item),
       sections: [
+        ...detailSection("Query", query),
         ...detailSection("Action", item.actionText),
         ...detailSection("Results", item.resultsText),
       ],

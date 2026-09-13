@@ -103,6 +103,10 @@ this machine's history.
   consecutive runs fold into summaries with counts and failures. Expand a run
   for individually collapsed tools. Each file has an initially collapsed, lazy
   Pierre diff. Reasoning stays hidden in both densities.
+- Tool summaries use ellipsis to fit the row. Expand a tool for its complete
+  command, query, arguments, results, or error. Detail sections preserve whitespace,
+  wrap long lines, and scroll for long payloads; the reader does not cap stored
+  tool text or file diffs.
 - Conversations open at the latest message, including idle agents and with Watch
   off. **Watch live** polls committed items about once per second, appends unseen
   messages, and follows the live edge. Scrolling away releases following;
