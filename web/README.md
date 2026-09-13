@@ -157,6 +157,14 @@ The imported, approved review images contain **synthetic conversations**:
 [Messages](docs/screenshots/messages.png) · [Full](docs/screenshots/full.png) ·
 [File diff](docs/screenshots/diff.png) · [Mobile](docs/screenshots/mobile.png).
 
+## Components and transcript API
+
+`@agentchats/transcript` is a separately packable foundation for external UIs.
+Its data, React, Codex HTTP adapter, and opt-in scoped styles have separate entry
+points. The reader uses the same Transcript component; the package exports no
+app shell or database reader. See the [package guide](packages/transcript/README.md)
+for composition, live-source semantics, building, and agentvoice boundaries.
+
 ## Structure and provenance
 
 - `server/preview.ts`: production preview launched by `agentchats serve`.
@@ -165,7 +173,8 @@ The imported, approved review images contain **synthetic conversations**:
 - `server/reader-api.ts`: local API, Codex metadata, and committed-history reader.
 - `src/lib/api/codex.ts`: Codex records mapped to presentation types.
 - `src/lib/transcript.ts`: ordered grouping of consecutive activity.
-- `src/components/chat/`: messages, markdown, disclosures, lazy Pierre rendering.
+- `src/transcript/`: public data/source and React component API.
+- `src/components/chat/`: reader pane and private markdown/disclosure/Pierre renderers.
 - `src/components/layout/`: sessions and toolbar controls.
 - `src/components/ui/`: shadcn / Base UI primitives; MessageScroller owns scrolling.
 - `src/index.css`: arthack web tokens, typography, responsive composition.

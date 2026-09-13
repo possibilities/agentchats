@@ -118,8 +118,11 @@ export const items = [
 
 export async function mockHistory(
   page: Page,
-  options: { empty?: boolean; long?: boolean; threadDelay?: number; working?: boolean } = {},
+  options: { empty?: boolean; long?: boolean; threadDelay?: number; working?: boolean; markdownTitle?: boolean } = {},
 ) {
+  const listed = options.markdownTitle
+    ? sessions.map((session) => ({ ...session, title: "# A **Markdown** task\n\n## Goal\n- Preserve real newlines.\n- Keep the full message.\n\nUse `code` and [links](https://example.test)." }))
+    : sessions
   const state = {
     polls: 0,
     failPoll: false,
@@ -136,7 +139,7 @@ export async function mockHistory(
         status: state.failIndex ? 503 : 200,
         json: state.failIndex
           ? { error: "Session index unavailable." }
-          : { threads: options.empty ? [] : sessions },
+          : { threads: options.empty ? [] : listed },
       })
       return
     }
@@ -152,12 +155,14 @@ export async function mockHistory(
     if (!isPoll && options.threadDelay)
       await new Promise((resolve) => setTimeout(resolve, options.threadDelay))
     const id = decodeURIComponent(url.pathname.split("/")[3])
-    const selected = sessions.find((session) => session.id === id) ?? thread
+    const selected = listed.find((session) => session.id === id) ?? thread
     let source = options.empty
       ? []
       : isPoll
         ? state.live
         : [...items, ...state.live]
+    if (options.markdownTitle && !isPoll)
+      source = [item(0, "userMessage", { content: [{ text: listed[0].title }] }), ...source.slice(1)]
     if (options.long && !isPoll)
       source = [
         ...source,

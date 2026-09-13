@@ -55,7 +55,7 @@ function CodeBlock({ children }: { children?: ReactNode }) {
           >
             {copied ? <CheckIcon /> : <CopyIcon />}
           </TooltipTrigger>
-          <TooltipContent>{copied ? "Copied" : "Copy code"}</TooltipContent>
+          <TooltipContent portalClassName="agentchats-transcript">{copied ? "Copied" : "Copy code"}</TooltipContent>
         </Tooltip>
       </div>
       <pre>{children}</pre>
@@ -71,7 +71,7 @@ export function MarkdownContent({ content }: { content: string }) {
         rehypePlugins={[rehypeHighlight]}
         components={{
           pre: ({ children }) => <CodeBlock>{children}</CodeBlock>,
-          a: ({ children, ...props }) => (
+          a: ({ children, node: _node, ...props }) => (
             <a {...props} target="_blank" rel="noreferrer">
               {children}
             </a>

@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "rootDir": "./src",
+    "outDir": "./packages/transcript/dist/types",
+    "strict": true
+  },
+  "include": ["src/transcript/index.ts", "src/transcript/react.ts", "src/transcript/codex.ts"]
+}

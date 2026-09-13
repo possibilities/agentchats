@@ -1,0 +1,61 @@
+{
+  "name": "@agentchats/transcript",
+  "version": "0.1.0",
+  "description": "Composable Human / Agent transcripts, live sources, and React blocks",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/possibilities/agentchats.git",
+    "directory": "web/packages/transcript"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": [
+    "**/*.css"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/types/transcript/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./react": {
+      "types": "./dist/types/transcript/react.d.ts",
+      "import": "./dist/react.js"
+    },
+    "./codex": {
+      "types": "./dist/types/transcript/codex.d.ts",
+      "import": "./dist/codex.js"
+    },
+    "./styles.css": "./dist/styles.css"
+  },
+  "peerDependencies": {
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    },
+    "react-dom": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "@base-ui/react": "^1.8.0",
+    "@pierre/diffs": "^1.4.2",
+    "@shadcn/react": "^0.3.1",
+    "class-variance-authority": "^0.7.1",
+    "cn": "^0.3.0",
+    "lucide-react": "^1.45.0",
+    "react-markdown": "^10.1.0",
+    "rehype-highlight": "^7.0.2",
+    "remark-gfm": "^4.0.1",
+    "unified": "^11.0.5",
+    "remark-parse": "^11.0.0",
+    "mdast-util-to-string": "^4.0.0"
+  }
+}

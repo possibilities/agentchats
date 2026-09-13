@@ -1,3 +1,4 @@
+import { transcriptTitle } from "../transcript-title"
 import type {
   CodexApiError,
   CodexThreadDetailResponse,
@@ -257,7 +258,7 @@ function mapItems(items: CodexThreadItemRecord[], detail: CodexTranscriptDetail)
 function mapSession(thread: CodexThreadRecord): SessionSummary {
   return {
     id: thread.id,
-    title: thread.title,
+    title: transcriptTitle(thread.title),
     updatedAt: new Date(thread.recencyAtMs || thread.updatedAtMs).toISOString(),
     status: sessionStatus(thread.turnStatus),
     messageCount: thread.messageCount,
@@ -267,8 +268,15 @@ function mapSession(thread: CodexThreadRecord): SessionSummary {
   }
 }
 
-async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
-  const response = await fetch(url, { signal, headers: { Accept: "application/json" } })
+export interface CodexTransportOptions {
+  /** Same-origin proxy base, or a URL permitted by the host server's origin policy. */
+  baseUrl?: string
+  fetch?: typeof globalThis.fetch
+}
+
+async function getJson<T>(url: string, signal?: AbortSignal, transport: CodexTransportOptions = {}): Promise<T> {
+  const endpoint = `${(transport.baseUrl ?? "/api").replace(/\/$/, "")}${url}`
+  const response = await (transport.fetch ?? globalThis.fetch)(endpoint, { signal, headers: { Accept: "application/json" } })
   const data = (await response.json()) as T | CodexApiError
   if (!response.ok) {
     throw new Error(isObject(data) && typeof data.error === "string" ? data.error : response.statusText)
@@ -277,7 +285,7 @@ async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
 }
 
 export async function fetchSessions(signal?: AbortSignal) {
-  const response = await getJson<CodexThreadListResponse>("/api/threads?limit=50", signal)
+  const response = await getJson<CodexThreadListResponse>("/threads?limit=50", signal)
   return response.threads.map(mapSession)
 }
 
@@ -285,16 +293,18 @@ export async function fetchThread(
   threadId: string,
   detail: CodexTranscriptDetail,
   signal?: AbortSignal,
+  transport?: CodexTransportOptions,
 ): Promise<CodexThreadView> {
   const response = await getJson<CodexThreadDetailResponse>(
-    `/api/threads/${encodeURIComponent(threadId)}?detail=${detail}`,
+    `/threads/${encodeURIComponent(threadId)}?detail=${detail}`,
     signal,
+    transport,
   )
   return {
     thread: {
       id: response.thread.id,
       sessionId: response.thread.id,
-      title: response.thread.title,
+      title: transcriptTitle(response.thread.title),
       messages: mapItems(response.items, detail),
     },
     summary: mapSession(response.thread),
@@ -308,10 +318,12 @@ export async function fetchThreadItems(
   afterOrdinal: number,
   detail: CodexTranscriptDetail,
   signal?: AbortSignal,
+  transport?: CodexTransportOptions,
 ): Promise<CodexThreadUpdate> {
   const response = await getJson<CodexThreadItemsResponse>(
-    `/api/threads/${encodeURIComponent(threadId)}/items?after_ordinal=${afterOrdinal}&detail=${detail}`,
+    `/threads/${encodeURIComponent(threadId)}/items?after_ordinal=${afterOrdinal}&detail=${detail}`,
     signal,
+    transport,
   )
   return {
     messages: mapItems(response.items, detail),

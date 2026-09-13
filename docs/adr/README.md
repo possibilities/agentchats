@@ -7,6 +7,9 @@ changing native readers, indexing or query behavior.
 [0002: Own the web conversation reader](0002-own-the-web-conversation-reader.md)
 records the approved Be Like Grok relocation and its initial Codex read boundary.
 
+[0003: Compose transcript surfaces](0003-compose-transcript-surfaces.md)
+records the reduced reader and the portable component/live-source API.
+
 ## Withdrawn viewer experiment
 
 The earlier `0001-viewer-on-vendored-opencode-renderer.md` belonged to a

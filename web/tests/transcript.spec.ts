@@ -292,3 +292,18 @@ test("follows new committed messages while the agent stays idle", async ({ page 
     (element) => element.scrollHeight - element.clientHeight - element.scrollTop,
   )).toBeLessThan(2)
 })
+
+test("prompt-seeded metadata becomes a concise title while the first Human message keeps its Markdown", async ({ page }) => {
+  await mockHistory(page, { markdownTitle: true })
+  await page.goto("/")
+  await expect(page.locator(".thread-intro h1")).toHaveText("A Markdown task")
+  const first = page.locator('[data-slot="message"]').first()
+  await expect(first.locator(".message-author")).toHaveText("Human")
+  await expect(first.getByRole("heading", { level: 1 })).toHaveText("A Markdown task")
+  await expect(first.getByRole("heading", { level: 2 })).toHaveText("Goal")
+  await expect(first.getByRole("listitem")).toHaveCount(2)
+  await expect(first.locator("strong")).toHaveText("Markdown")
+  await expect(first.locator("code")).toHaveText("code")
+  await expect(first.getByRole("link")).toHaveAttribute("href", "https://example.test")
+  await expect(page.locator(".session-row__title").first()).toHaveText("A Markdown task")
+})

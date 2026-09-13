@@ -2,12 +2,17 @@ import type { Message } from "../types/message"
 
 export type TranscriptEntry =
   | { kind: "message"; id: string; message: Message }
-  | { kind: "activity"; id: string; messages: Message[] }
+  | { kind: "activity"; id: string; messages: readonly Message[] }
 
 // Never group across a user or assistant message. The first id stays
 // stable when live items append, preserving disclosure state during polling.
-export function groupTranscript(messages: Message[]): TranscriptEntry[] {
-  const entries: TranscriptEntry[] = []
+export function groupTranscript(
+  messages: readonly Message[],
+): TranscriptEntry[] {
+  const entries: Array<
+    | { kind: "message"; id: string; message: Message }
+    | { kind: "activity"; id: string; messages: Message[] }
+  > = []
   for (const message of messages) {
     if (message.role === "user" || message.role === "assistant") {
       entries.push({ kind: "message", id: message.id, message })
@@ -23,7 +28,7 @@ export function groupTranscript(messages: Message[]): TranscriptEntry[] {
   return entries
 }
 
-export function activitySummary(messages: Message[]) {
+export function activitySummary(messages: readonly Message[]) {
   const kinds = new Map<string, number>()
   let errors = 0
   let running = 0

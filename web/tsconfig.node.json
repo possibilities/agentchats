@@ -5,6 +5,7 @@
     "lib": ["ES2023"],
     "types": ["node", "bun"],
     "skipLibCheck": true,
+    "resolveJsonModule": true,
 
     /* Bundler mode */
     "module": "nodenext",
@@ -20,5 +21,5 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["vite.config.ts", "server/**/*.ts", "playwright.config.ts", "src/types/codex-db.ts"]
+  "include": ["vite.config.ts", "server/**/*.ts", "playwright.config.ts", "src/types/codex-db.ts", "vite.package.config.ts", "scripts/**/*.ts"]
 }

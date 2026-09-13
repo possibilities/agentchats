@@ -9,7 +9,7 @@ import {
 import { activitySummary } from "@/lib/transcript"
 import type { Message } from "@/types/message"
 
-export function ActivityGroup({ messages }: { messages: Message[] }) {
+export function ActivityGroup({ messages }: { messages: readonly Message[] }) {
   const [open, setOpen] = useState(false)
   const { kinds, errors, running, files } = activitySummary(messages)
   if (messages.length === 1) return <ChatMessage message={messages[0]} />
