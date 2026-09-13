@@ -78,6 +78,8 @@ agentchats:
   npm --prefix $repo_root/web ci                           # reader + pinned portless dependencies
   npm --prefix $repo_root/web run build                    # production assets; both reader steps bounded to ${reader_timeout_seconds}s
   ln -sfn $repo_root/bin/agentchats $dest_dir/agentchats      # only after dependencies and build succeed
+  serve defaults to editable Vite dev (no web/dist required); --production uses the prepared build
+  install from main and kickstart the AgentStart LaunchAgent to serve editable main
   portless proxy setup and launchd ownership stay with AgentStart; serve never prompts for sudo
   scripts/run-with-timeout ${index_timeout_seconds}s ... agentchats index   # incremental when the index exists; safe to rerun
 EOF
@@ -118,7 +120,8 @@ printf 'Installing frozen dependencies.\n'
     || die "bun install --frozen-lockfile failed in $repo_root"
 
 # Prepare the production reader before changing the command link. Runtime
-# restarts only serve these assets; they do not install packages or rebuild.
+# dev uses installed dependencies without dist; --production uses these assets.
+# Runtime restarts do not install packages or build production assets.
 printf 'Preparing the production reader.\n'
 run_with_timeout "$reader_timeout_seconds" "reader dependencies" \
     npm --prefix "$repo_root/web" ci \

@@ -137,9 +137,12 @@ const commands: ContractCommand[] = [
   },
   {
     name: "serve", summary: "Run the local conversation reader at https://agentchats.localhost",
-    audience: "operator", mutates: true, blocking: true, x_output: "text", arguments: [],
-    guidance: "Runs the installed production build and Bun reader API under portless in the foreground. Requires Node.js 24+ and a running local HTTPS portless proxy. Run scripts/install.sh --install after updating this checkout to prepare the reader. TERM/INT/HUP stop the owned reader and release its route. This operator command is not an MCP tool.",
-    examples: [{ invocation: "agentchats serve", description: "Keep the reader running for local use or launchd supervision." }],
+    audience: "operator", mutates: true, blocking: true, x_output: "text", arguments: [
+      { name: "--production", type: "boolean", description: "Serve the prepared web/dist build instead of Vite dev with HMR." },
+    ],
+    guidance: "Runs Vite dev with HMR and the Bun reader API under portless in the foreground by default. Requires Node.js 24+, installed dependencies, and a running local HTTPS portless proxy; dev does not need web/dist. Use --production for the prepared web/dist build. Run scripts/install.sh --install from main and kickstart the AgentStart LaunchAgent to make the always-on reader editable from main. Runtime restarts never install packages or build production assets. TERM/INT/HUP stop the owned reader and release its route. This is the intended fleet web UI pattern: default Vite dev, AgentStart-owned launchd, a fixed portless named .localhost HTTPS origin, and optional --production. Agentchats is the first instance; the future agentvoice web UI will follow the same pattern. This operator command is not an MCP tool.",
+    examples: [{ invocation: "agentchats serve", description: "Keep the editable reader running for local use or launchd supervision." },
+      { invocation: "agentchats serve --production", description: "Serve the installed production build." }],
   },
   {
     name: "mcp", summary: "Serve the producer MCP tools over stdio",

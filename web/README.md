@@ -14,12 +14,16 @@ agentchats serve
 ```
 
 Open **https://agentchats.localhost**. `serve` uses this fixed name even from a
-Git worktree, independent of the caller's working directory. It runs the built
-Vite preview under Bun, retaining the session-index and Codex reader API.
+Git worktree, independent of the caller's working directory. By default it runs
+Vite dev with HMR under Bun, retaining the session-index and Codex reader API.
+Installed dependencies are required; dev does not need `web/dist`.
+`agentchats serve --production` uses Vite preview and requires `web/dist`.
 The installer resolves the root Bun lockfile and `web/package-lock.json`
 (including pinned portless), builds the reader, then updates the CLI link and
-refreshes the index. Rerun the installer and restart `serve` after updating code.
-`serve` itself neither installs packages nor rebuilds on service restarts.
+refreshes the index. Reinstall when dependencies change; restart for server/API
+changes. UI edits use HMR without a build or redeploy. Production assets need
+rebuilding after code changes. `serve` itself never installs packages or builds
+production assets on service restarts.
 
 ### Shared proxy prerequisite
 
@@ -38,7 +42,7 @@ stack setup. `serve` uses its own locked portless dependency. If the global
 command is unavailable, use `web/node_modules/.bin/portless` from this checkout.
 Safari may also need `portless hosts sync` after the route is registered.
 The foreground service disables automatic hosts-file edits and never prompts
-for sudo. Missing proxy or build prerequisites produce an error and nonzero exit.
+for sudo. Missing proxy, dependency, or requested production-build prerequisites produce an error and nonzero exit.
 
 ### Foreground service contract
 
@@ -50,7 +54,7 @@ and a `PATH` containing Bun and Node.js 24+ (typically `~/.bun/bin`,
 directory is required. Keep stdout/stderr attached to the supervisor's logs.
 
 `serve` stays in the foreground. TERM, INT, or HUP wait for portless to stop its
-preview process tree and release the route; child failures preserve a nonzero
+reader process tree and release the route; child failures preserve a nonzero
 exit. Duplicate routes are refused without taking over the existing reader.
 The backend binds `127.0.0.1` on portless's assigned `PORT` with strict binding,
 so it fails instead of selecting an unregistered port. The public origin is
@@ -59,9 +63,27 @@ inherited proxy-bypass settings are disabled. The API permits the exact HTTPS
 origin forwarded by portless and direct loopback reads, with foreign origins
 and hosts still rejected. The shared proxy must also run in loopback mode.
 
+Install from `~/code/agentchats` on **main**, then run
+`launchctl kickstart -k "gui/$(id -u)/io.arthack.agentchats.serve"` to make the
+already-installed LaunchAgent editable from main. The CLI symlink selects the
+checkout; the launchd command stays `agentchats serve` (default dev).
+
+This is the intended fleet web UI pattern. Agentchats is the first instance;
+the future agentvoice web UI must follow it at `https://agentvoice.localhost`
+with default Vite dev, launchd, portless, and optional `--production`.
+Reuse this ownership pattern:
+AgentStart prepares the shared HTTPS proxy and supervises a foreground `serve`;
+the app owns its installed dependencies, fixed portless name, and Vite dev/API
+entry point. Consume portless's `PORT`, bind strictly to `127.0.0.1`, allow the
+app's exact named origin, and send HMR over the same HTTPS proxy. Keep production
+an explicit option and installs outside runtime restarts. This change adds no
+agentvoice implementation.
+
 ### Development and direct preview
 
 ```sh
+agentchats serve               # always-on pattern: named HTTPS + HMR
+agentchats serve --production  # named HTTPS, requires web/dist
 bun run web:dev                # ordinary Vite development, loopback URL
 bun run web:build
 npm --prefix web run preview   # direct loopback production preview
@@ -148,7 +170,7 @@ bun run check                     # root CLI/index/MCP checks + reader checks
 `bun test` at the root runs only `test/`; `npm --prefix web run test:api` runs
 `web/server-tests/`. `npm --prefix web run test:browser` runs Playwright with its
 own Vite process on loopback port 5197 (`AGENTCHATS_TEST_PORT` overrides it). Browser tests use synthetic API responses;
-API tests create temporary SQLite fixtures; the production test uses the actual
+API tests create temporary SQLite fixtures; dev and production tests use the actual
 portless HTTPS proxy library with a temporary certificate and unprivileged ports. Neither touches the operator's history.
 The browser suite checks actual components and writes screenshots/traces to
 ignored `web/test-results/`, so routine checks do not rewrite tracked evidence.
@@ -167,7 +189,8 @@ for composition, live-source semantics, building, and agentvoice boundaries.
 
 ## Structure and provenance
 
-- `server/preview.ts`: production preview launched by `agentchats serve`.
+- `server/dev.ts`: default Vite dev + HMR launched by `agentchats serve`.
+- `server/preview.ts`: production preview launched by `agentchats serve --production`.
 - `server/local-origin.ts`: loopback and exact-origin request guard.
 - `server/session-index.ts`: read-only adapter to agentchats' session query.
 - `server/reader-api.ts`: local API, Codex metadata, and committed-history reader.
