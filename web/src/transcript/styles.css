@@ -22,7 +22,7 @@
   box-sizing: border-box;
   color: var(--text);
   background: var(--canvas);
-  font-family: var(--font-sans);
+  font-family: var(--font-mono);
   font-synthesis: none;
   -webkit-font-smoothing: antialiased;
 }

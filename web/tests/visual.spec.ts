@@ -26,6 +26,9 @@ test("capture the real components with synthetic review content", async ({
   await page
     .locator('[data-slot="message-scroller-viewport"]')
     .evaluate((element) => element.scrollTo(0, 0))
+  // Capture the settled composition after deferred content-visibility paint.
+  // Interaction assertions above do not depend on this screenshot-only delay.
+  await page.waitForTimeout(250)
   await page.screenshot({ path: testInfo.outputPath("full.png") })
   await page.locator(".activity-group__trigger").click()
   await page.locator(".file-change-event .tool-disclosure__trigger").click()
@@ -47,6 +50,12 @@ test("capture the real components with synthetic review content", async ({
     .locator('[data-slot="message-scroller-viewport"]')
     .evaluate((element) => element.scrollTo(0, 0))
   await page.setViewportSize({ width: 390, height: 844 })
+  // Resize restores the followed edge; frame the mobile review at the top.
+  await page.waitForTimeout(250)
+  await page
+    .locator('[data-slot="message-scroller-viewport"]')
+    .evaluate((element) => element.scrollTo(0, 0))
+  await page.waitForTimeout(250)
   await page.screenshot({ path: testInfo.outputPath("mobile.png") })
   expect(errors).toEqual([])
 })

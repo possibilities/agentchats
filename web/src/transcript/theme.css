@@ -30,7 +30,9 @@
   --border: var(--line);
   --input: var(--line);
   --ring: var(--accent);
-  --radius: 0.5rem;
+  --radius: 0.25rem;
+  --transcript-column: 1120px;
+  --transcript-measure: 80ch;
   --sidebar: var(--field);
   --sidebar-foreground: var(--text);
   --sidebar-primary: var(--accent);
@@ -43,7 +45,7 @@
 
 @theme inline {
   --font-sans: "Geist Variable", sans-serif;
-  --font-mono: "Geist Mono Variable", "SFMono-Regular", monospace;
+  --font-mono: "Geist Mono Variable", ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
   --font-heading: var(--font-sans);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -76,4 +78,3 @@
   --radius-lg: var(--radius);
   --radius-xl: 0.75rem;
 }
-

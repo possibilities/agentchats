@@ -180,7 +180,7 @@ portless HTTPS proxy library with a temporary certificate and unprivileged ports
 The browser suite checks actual components and writes screenshots/traces to
 ignored `web/test-results/`, so routine checks do not rewrite tracked evidence.
 
-The imported, approved review images contain **synthetic conversations**:
+The current monospaced design review images contain **synthetic conversations**:
 [Messages](docs/screenshots/messages.png) · [Full](docs/screenshots/full.png) ·
 [File diff](docs/screenshots/diff.png) · [Mobile](docs/screenshots/mobile.png).
 
@@ -211,6 +211,6 @@ agentvoice's Agent pane; this reader does not mount a composer and stays read-on
 
 Imported from [possibilities/be-like-grok](https://github.com/possibilities/be-like-grok)
 main at `a7f0ae7d89ff3a3ca78a3d1d7a7b12476b73e9d1` (approved design `74c8de6`).
-The [original design brief](docs/arthack-aesthetic-brief.md) and review images
-preserve the shipped design; this guide supersedes its original runtime/data notes.
+The [design brief](docs/arthack-aesthetic-brief.md) records the September 13
+monospaced revision and refreshed review images. This guide owns runtime/data notes.
 Agentchats owns this reader going forward.

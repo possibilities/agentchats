@@ -22,7 +22,7 @@
     margin: 0;
     background: var(--canvas);
     color: var(--text);
-    font-family: var(--font-sans);
+    font-family: var(--font-mono);
     font-synthesis: none;
     -webkit-font-smoothing: antialiased;
   }
@@ -81,8 +81,8 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  min-height: 72px;
-  padding: 16px 24px;
+  min-height: 56px;
+  padding: 8px 24px;
 }
 .conversation-toolbar__context,
 .conversation-toolbar__actions,
@@ -96,7 +96,7 @@
   gap: 12px;
   color: var(--muted);
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 13px;
 }
 .conversation-toolbar__context > span {
   overflow: hidden;
@@ -124,7 +124,7 @@
   min-width: 52px;
   min-height: 30px;
   border: none;
-  border-radius: 5px;
+  border-radius: var(--radius);
   padding-inline: 12px;
   color: var(--muted);
   font-size: 13px;
@@ -159,8 +159,8 @@
 .session-index {
   display: flex;
   flex-direction: column;
-  gap: 24px;
-  padding: 24px 20px 20px;
+  gap: 20px;
+  padding: 20px;
 }
 .session-index__heading {
   display: flex;
@@ -177,7 +177,7 @@
 }
 .session-index__count {
   color: var(--muted);
-  font: 12px var(--font-mono);
+  font: 13px var(--font-mono);
   font-variant-numeric: tabular-nums;
 }
 .session-index [data-slot="input-group"] {
@@ -197,8 +197,8 @@
 }
 .session-list [data-slot="sidebar-menu-button"] {
   height: auto;
-  min-height: 100px;
-  padding: 16px 12px;
+  min-height: 88px;
+  padding: 12px;
   border-left: 2px solid transparent;
   border-radius: 0 var(--radius) var(--radius) 0;
 }
@@ -218,7 +218,7 @@
   justify-content: space-between;
   gap: 12px;
   color: var(--muted);
-  font: 12px/1.3 var(--font-mono);
+  font: 13px/1.3 var(--font-mono);
 }
 .session-row__context > span {
   flex: none;
@@ -230,7 +230,7 @@
   -webkit-box-orient: vertical;
   white-space: normal;
   overflow-wrap: anywhere;
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 400;
   line-height: 1.45;
 }
@@ -240,7 +240,7 @@
   align-items: center;
   gap: 12px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.4;
 }
 .session-row__working {
@@ -312,12 +312,6 @@
   }
   .density-control [data-slot="toggle-group-item"] {
     padding-inline: 10px;
-  }
-  .thread-intro h1 {
-    font-size: 21px;
-  }
-  .thread-intro p > :last-child {
-    margin-left: 0;
   }
   .history-error {
     margin-inline: 16px;

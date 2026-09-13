@@ -18,8 +18,22 @@ ships no app shell, session picker, command UI, database reader, or server proce
 The data entry has no React, browser, provider, or storage dependency. The React
 entry requires React and React DOM 19.2+. Styles use CSS `@scope` (Chromium 118+,
 Safari 17.4+, Firefox 146+), and affect only `.agentchats-transcript` containers.
-Geist is used when the host supplies it; system sans/mono fonts are fallbacks.
+Geist Mono is used for prose, labels, tools and the composer when the host supplies
+it (for example, `import '@fontsource-variable/geist-mono'`). Otherwise the system
+monospace stack is used. The stylesheet does not download fonts or restyle the host.
 Pierre loads only when a file diff opens. Raw HTML in Markdown is not rendered.
+
+The 0.3.1 presentation puts Human input and Agent replies on the same left edge,
+using a flat inset for Human input and open space for replies. Reading text is
+18px with 28px leading, message gaps are 24px (20px in narrow lanes), and prose
+is capped at 80ch.
+Code, tables and diffs can use the wider 1120px outer column. Transcript and composer
+share that column. Container queries compact each lane independently, including
+two narrow lanes in a wide window. Gutters shrink from 32px to 20px below 800px,
+and 16px below 400px. Coarse pointers retain 44px controls.
+`--transcript-column` and `--transcript-measure` can be overridden
+on `.agentchats-transcript` in a host stylesheet. Remove older host overrides of
+`.chat-transcript` padding/gap to adopt the shared density unchanged.
 
 ## Rendering host-owned data
 
@@ -41,10 +55,6 @@ The host owns loading/error copy, titles, and controls. `aria-label` names each
 lane; `viewportId` supplies a unique DOM anchor if needed. Constrain the parent's
 height so the transcript can scroll. Changing `transcriptId`, detail, or loading
 completion resets to the bottom. Idle and working transcripts behave identically.
-The shared reading column uses up to 1120 pixels, with 32-pixel side padding that
-reduces to 20 or 16 pixels based on the container width. Message gaps are 24 pixels
-(20 in the narrowest lanes); author-to-body spacing is 6 pixels. Composer and
-transcript content align, including in host-owned side-by-side lanes.
 Within 64 pixels of the bottom, new messages and growing same-ID revisions stay
 at the end. Scrolling farther away preserves the reader's place and shows
 **1 new message** / **N new messages**, counting newly added visible message IDs
@@ -112,6 +122,9 @@ Agent pane, never its Voice pane or the agentchats reader UI.
 Render `TranscriptComposer` as a sibling below the scrollable `Transcript`, inside
 the same height-constrained flex column. Do not put it in the scrolling `footer`.
 Use it only in lanes where the host can send Human input to the Agent.
+The placeholder identifies the field visually; `aria-label` names it accessibly.
+There is no repeated label above the box. Keyboard focus belongs to the whole
+input group, with no nested textarea ring.
 
 ```tsx
 import { Transcript, TranscriptComposer } from '@agentchats/transcript/react'

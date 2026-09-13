@@ -25,7 +25,7 @@ export const ChatMessage = memo(function ChatMessage({
   }
   const isUser = message.role === "user"
   return (
-    <MessageRow align={isUser ? "end" : "start"}>
+    <MessageRow align="start" data-role={message.role}>
       <MessageContent>
         <MessageHeader>
           <span className="message-author">{isUser ? "Human" : "Agent"}</span>
@@ -39,7 +39,7 @@ export const ChatMessage = memo(function ChatMessage({
           ) : null}
         </MessageHeader>
         <Bubble
-          align={isUser ? "end" : "start"}
+          align="start"
           variant={isUser ? "secondary" : "ghost"}
         >
           <BubbleContent>
