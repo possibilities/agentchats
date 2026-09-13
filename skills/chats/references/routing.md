@@ -3,6 +3,8 @@
 Use the installed AgentChats `guide` or `routing-receipt` tool description for
 the exact schema. The formatter returns validated `routing_receipt` JSON and
 writes no file or index. Native tool-result retention is the only capture path.
+Emit it in its own tool call; CLI/programmatic wrappers must return only the
+receipt result, without other commands or extra text. Mixed output is unjoined.
 
 Before a substantive direct-work/delegation/reuse/escalation decision, supply a
 unique decision ID, short task and reason, requested model/effort/context/tier,

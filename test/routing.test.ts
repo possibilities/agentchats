@@ -184,3 +184,28 @@ test("duplicate native call and item identities stay unresolved instead of mixin
   const receipt = source([metadata(), ...note("n", decision("direct")), call("n", "mcp__agentchats__routing-receipt", {} )]);
   expect(routingView(receipt, []).total).toBe(0);
 });
+
+
+test("large routing JSON drains completely before the CLI exits into a slow pipe", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "routing-pipe-"));
+  const file = join(dir, basenameFor(parentId));
+  let child: ReturnType<typeof Bun.spawn> | undefined;
+  try {
+    const rows = Array.from({ length: 50 }, (_, i) => call(`call-${i}`, "spawn_agent", { task_name: `task-${i}-` + "x".repeat(500), model: "m".repeat(1000) }));
+    await writeFile(file, [metadata(), ...rows].join("\n"));
+    const running = Bun.spawn([process.execPath, join(import.meta.dir, "../src/cli/main.ts"), "routing", file, "--limit", "50"], { stdout: "pipe", stderr: "pipe" });
+    child = running;
+    await Bun.sleep(30);
+    const [stdout, stderr, exit] = await Promise.all([new Response(running.stdout).text(), new Response(running.stderr).text(), running.exited]);
+    expect(exit).toBe(0);
+    expect(stderr).toBe("");
+    expect(Buffer.byteLength(stdout)).toBeGreaterThan(65536);
+    const result = JSON.parse(stdout);
+    expect(result.count).toBe(50);
+    expect(result.attempts.at(-1).call_id).toBe("call-49");
+  } finally {
+    if (child && child.exitCode === null) child.kill();
+    if (child) await child.exited;
+    await rm(dir, { recursive: true, force: true });
+  }
+});

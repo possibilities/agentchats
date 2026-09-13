@@ -48,7 +48,10 @@ async function main(argv: string[]): Promise<number> {
       : parsed.flags.has("json") || command.x_output === "json"
         ? `${JSON.stringify(output.value)}\n`
         : output.human?.() ?? "";
-    process.stdout.write(text);
+    // Explicit process.exit below must not discard buffered JSON on a slow pipe.
+    await new Promise<void>((resolve, reject) => {
+      process.stdout.write(text, (error) => error ? reject(error) : resolve());
+    });
     return output.exitCode;
   } catch (error) {
     const failure = commandError(error, name);

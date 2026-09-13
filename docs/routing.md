@@ -6,7 +6,10 @@ native transcript can retain the tool result under its existing retention policy
 This is an explicit rationale, never a request for hidden reasoning. Receipts are
 authored claims, not proof that the model executed the route or that work is good.
 
-Use the discovered MCP tool with a `receipt` JSON string, or the CLI:
+Use the discovered MCP tool with a `receipt` JSON string, or the CLI. Emit the
+receipt in its own tool call; a CLI/programmatic wrapper must return only that
+result, without batching other commands or printing extra text. Mixed output is
+not a standalone receipt and remains unjoined. For example:
 
 ```sh
 agentchats routing-receipt --receipt '{"schema_version":1,"kind":"decision","decision_id":"source-review-1","action":"delegate","task":"Check the report sources","reason":"Independent evidence review benefits from a fresh context","target":"source_review","requested":{"model":"gpt-6-astra","effort":"high","context":"none","service_tier":null},"evidence_refs":["wiki:report"]}'
