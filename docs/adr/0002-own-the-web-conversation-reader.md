@@ -2,7 +2,7 @@
 
 Status: Accepted
 Date: 2026-09-13
-Updated: 2026-09-13 — Mike approved the foreground portless service follow-up.
+Updated: 2026-09-13 — Mike approved default editable Vite dev for the always-on service.
 
 ## Context
 
@@ -54,11 +54,13 @@ or a restriction in the shared query layer.
   the recent index candidates. Some older indexed Codex transcripts may have no
   committed history; the reader does not reconstruct rich items from rollouts.
 - The initial service deferral is lifted by Mike's follow-up approval.
-  `agentchats serve` runs Bun's Vite production preview and reader API under
+  `agentchats serve` runs Bun's Vite dev server with HMR and reader API under
   pinned portless at exactly `https://agentchats.localhost`. It runs in the
-  foreground, consumes the installer's build, refuses duplicate/busy binds,
+  foreground, requires installed dependencies but no `web/dist`, refuses duplicate/busy binds,
   and forwards TERM/INT/HUP until portless has reaped the reader and removed
-  its route. It is an operator command, outside the MCP producer tools.
+  its route. `serve --production` retains Vite preview and requires the installer's
+  build. Install from main and kickstart the existing LaunchAgent to serve an
+  editable main checkout. It is an operator command, outside the MCP producer tools.
 - The shared HTTPS proxy must be prepared interactively (sudo and CA trust)
   through `portless service install` or `portless proxy start`. Serve probes
   loopback port 443 and fails with recovery advice when absent; it does not

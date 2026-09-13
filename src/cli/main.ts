@@ -34,7 +34,7 @@ async function main(argv: string[]): Promise<number> {
     if (name === "serve") {
       if (parsed.positional.length > 0) throw new UsageError("serve accepts no positional arguments");
       const { serveReader } = await import("./serve.ts");
-      return await serveReader(process.env);
+      return await serveReader(process.env, parsed.flags.has("production"));
     }
     if (name === "mcp") {
       if (parsed.positional.length > 0) throw new UsageError("mcp accepts no positional arguments");

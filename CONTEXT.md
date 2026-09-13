@@ -75,5 +75,6 @@ agentchats and relocated from the approved Be Like Grok design. Initial scope
 is Codex: discovery through the shared session-index query layer, rich
 committed history and live polling through a Codex adapter. It follows the
 arthack web design, independently of the Signal Room TUI. `agentchats serve`
-runs its production build under portless at `https://agentchats.localhost`;
+runs Vite dev with HMR under portless at `https://agentchats.localhost`
+(`--production` serves the prepared build);
 AgentStart owns launchd supervision. _Avoid_: Be Like Grok service.

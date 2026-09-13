@@ -15,21 +15,21 @@ async function freePort() {
   return address.port
 }
 
-test("production preview serves the API through portless HTTPS, rejects duplicate binds, and closes on TERM", async () => {
+test.each(["dev", "preview"] as const)("%s serves the API through portless HTTPS, rejects duplicate binds, and closes on TERM", async (mode) => {
   const web = resolve(import.meta.dirname, "..")
   // The check workflow builds before testing. Exercise those actual assets.
-  if (!existsSync(join(web, "dist/index.html"))) throw new Error("Run bun run web:build before reader tests")
+  if (mode === "preview" && !existsSync(join(web, "dist/index.html"))) throw new Error("Run bun run web:build before reader tests")
   const directory = mkdtempSync(join(tmpdir(), "agentchats-preview-"))
   const index = join(directory, "index.db")
   const database = new Database(index, { create: true })
   createSchema(database)
   database.close()
   const port = await freePort()
-  const env = { ...process.env, PORT: String(port), PORTLESS_URL: "https://agentchats.localhost", AGENTCHATS_INDEX: index }
-  const backend = Bun.spawn([process.execPath, join(web, "server/preview.ts")], { env, stdout: "pipe", stderr: "pipe" })
+  const env = { ...process.env, __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS: ".localhost", PORT: String(port), PORTLESS_URL: "https://agentchats.localhost", AGENTCHATS_INDEX: index }
+  const backend = Bun.spawn([process.execPath, join(web, `server/${mode}.ts`)], { env, stdout: "pipe", stderr: "pipe" })
   let proxy: ReturnType<typeof Bun.spawn> | undefined
   try {
-    const deadline = Date.now() + 5000
+    const deadline = Date.now() + 10000
     let ready = false
     while (Date.now() < deadline) {
       try { ready = (await fetch(`http://127.0.0.1:${port}/`)).ok } catch { /* starting */ }
@@ -63,14 +63,39 @@ test("production preview serves the API through portless HTTPS, rejects duplicat
     const options = { headers, tls: { rejectUnauthorized: false } }
     const base = `https://127.0.0.1:${proxyPort}`
     const html = await fetch(base, options)
-    expect(await html.text()).toContain("<title>Agentchats</title>")
+    const document = await html.text()
+    expect(document).toContain("<title>Agentchats</title>")
+    if (mode === "dev") {
+      expect(document).toContain("/@vite/client")
+      const client = await (await fetch(`${base}/@vite/client`, options)).text()
+      expect(client.includes('const socketProtocol = "wss"')).toBe(true)
+      expect(client.includes('"agentchats.localhost"')).toBe(true)
+      expect(client.includes('const hmrPort = 443')).toBe(true)
+      const token = client.match(/const wsToken = "([^"\n]+)"/u)?.[1]
+      expect(token).toBeDefined()
+      // The web tsconfig also includes DOM's narrower WebSocket constructor.
+      const HmrWebSocket = WebSocket as unknown as { new(url: string, options: Bun.WebSocketOptions): WebSocket }
+      const socket = new HmrWebSocket(`wss://127.0.0.1:${proxyPort}/?token=${token}`, {
+        protocols: ["vite-hmr"], headers, tls: { rejectUnauthorized: false },
+      })
+      try {
+        const connected = await new Promise<string>((done, reject) => {
+          const timer = setTimeout(() => reject(new Error("HMR handshake timed out")), 3000)
+          socket.onmessage = (event) => { clearTimeout(timer); done(String(event.data)) }
+          socket.onerror = () => { clearTimeout(timer); reject(new Error("HMR connection failed")) }
+        })
+        expect(JSON.parse(connected)).toEqual({ type: "connected" })
+      } finally { socket.close() }
+    }
+    const foreignHost = await fetch(`http://127.0.0.1:${port}/api/threads`, { headers: { Host: "another.localhost" } })
+    expect(foreignHost.status).toBe(403)
     const result = await fetch(`${base}/api/threads`, options)
     expect(result.status).toBe(200)
     expect(result.headers.get("x-portless")).toBe("1")
     expect(await result.json()).toEqual({ threads: [] })
     const foreign = await fetch(`${base}/api/threads`, { ...options, headers: { ...headers, Origin: "https://another.localhost" } })
     expect(foreign.status).toBe(403)
-    const duplicate = Bun.spawn([process.execPath, join(web, "server/preview.ts")], { env, stdout: "pipe", stderr: "pipe" })
+    const duplicate = Bun.spawn([process.execPath, join(web, `server/${mode}.ts`)], { env, stdout: "pipe", stderr: "pipe" })
     expect(await duplicate.exited).toBe(1)
     expect(await new Response(duplicate.stderr).text()).toContain("already in use")
     expect((await fetch(`${base}/api/threads`, options)).status).toBe(200)

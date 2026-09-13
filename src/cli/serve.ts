@@ -24,7 +24,7 @@ function proxyReady(): Promise<boolean> {
 }
 
 /** Keep the CLI alive for its owned process. Portless forwards signals, reaps
- * the preview process tree, and unregisters its route before it exits. */
+ * the reader process tree, and unregisters its route before it exits. */
 export function runForeground(command: string, args: string[], cwd: string, env: Environ): Promise<number> {
   return new Promise((done, reject) => {
     const child = spawn(command, args, { cwd, env, stdio: ["ignore", "inherit", "inherit"] });
@@ -49,12 +49,13 @@ export function runForeground(command: string, args: string[], cwd: string, env:
   });
 }
 
-export async function serveReader(env: Environ): Promise<number> {
+export async function serveReader(env: Environ, production = false): Promise<number> {
   const web = resolve(import.meta.dir, "../../web");
   const portless = resolve(web, "node_modules/.bin/portless");
   const node = Bun.which("node", { PATH: env["PATH"] ?? "" });
-  if (!node || !existsSync(portless) || !existsSync(resolve(web, "dist/index.html"))) {
-    throw new CliError("missing-reader", "The reader needs Node.js 24+, its dependencies, and a production build.",
+  if (!node || !existsSync(portless) || !existsSync(resolve(web, "node_modules/vite/package.json")) ||
+      (production && !existsSync(resolve(web, "dist/index.html")))) {
+    throw new CliError("missing-reader", `The reader needs Node.js 24+ and its dependencies${production ? ", plus a production build" : ""}.`,
       `run: ${resolve(web, "../scripts/install.sh")} --install`);
   }
   if (!await proxyReady()) {
@@ -62,7 +63,7 @@ export async function serveReader(env: Environ): Promise<number> {
       "Run portless service install (persistent) or portless proxy start in an interactive terminal, complete sudo/CA setup, then retry agentchats serve.");
   }
   return runForeground(node, [portless, "--name", "agentchats", "--", process.execPath,
-    resolve(web, "server/preview.ts")], web, {
+    resolve(web, production ? "server/preview.ts" : "server/dev.ts")], web, {
     ...env,
     PORTLESS: "1", PORTLESS_PORT: "443", PORTLESS_HTTPS: "1",
     PORTLESS_TLD: "localhost", PORTLESS_LAN: "0", PORTLESS_WILDCARD: "0",

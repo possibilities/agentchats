@@ -68,15 +68,39 @@ Codex-only; the index, CLI, and MCP continue to cover Claude Code too.
 After `cd web && npx playwright install chromium`, `bun run check` from the
 repository root verifies both trees, including API and browser tests.
 
-The normal installer installs both lockfiles and builds the reader before
-linking the CLI. Reinstall and restart after updating the checkout. `serve`
-runs the prepared build and Bun reader API under pinned portless in the
-foreground; it never rebuilds or prompts for sudo during a service restart.
-The route name is fixed even in worktrees. Bind failures and missing
-prerequisites exit nonzero; TERM/INT/HUP stop the child and release the route.
+`agentchats serve` runs Vite dev with HMR and the Bun reader API under pinned
+portless in the foreground. Installed dependencies are required; **dev does not
+need `web/dist`**. Edits to the linked checkout appear without rebuilding or
+redeploying. `agentchats serve --production` runs the prepared `web/dist` build
+instead; rebuild it after code changes. The normal installer resolves both
+lockfiles and still prepares production assets. Runtime restarts never install
+packages, build production assets, or prompt for sudo.
+
 AgentStart owns the `io.arthack.agentchats.serve` launchd job, invoking
-`~/.local/bin/agentchats serve` with Bun and Node on PATH. No launchd files are
-installed here. For direct development, `bun run web:dev` still works.
+`~/.local/bin/agentchats serve` with Bun and Node on PATH. To make the always-on
+LaunchAgent editable from **main**, install from the canonical main checkout,
+then restart the already-installed job:
+
+```sh
+cd ~/code/agentchats            # canonical checkout on main
+scripts/install.sh --install
+launchctl kickstart -k "gui/$(id -u)/io.arthack.agentchats.serve"
+```
+
+The CLI link determines which checkout is served, independent of launchd's
+working directory. Reinstall when dependencies change; restart for server/API
+changes. UI edits use HMR. The route name is fixed even in worktrees. Bind
+failures and missing prerequisites exit nonzero; TERM/INT/HUP stop the child
+and release the route. No launchd files are installed here. For a separate
+loopback development URL, `bun run web:dev` still works.
+
+This is the intended **fleet web UI pattern**: default Vite dev with HMR, an
+AgentStart-owned launchd job, and a fixed portless `<app>.localhost` HTTPS name,
+with `--production` optional. Agentchats is the first instance; the future
+agentvoice web UI will follow the same setup at `https://agentvoice.localhost`.
+Keep dependency installation outside runtime restarts and backends loopback-only
+with strict ports and exact-origin guards. See the [service contract](web/README.md#foreground-service-contract)
+for the reusable ownership and startup details. Agentvoice is not implemented here.
 
 See [the reader guide](web/README.md) for data sources and limitations, and
 [ADR 0002](docs/adr/0002-own-the-web-conversation-reader.md) for the boundary.

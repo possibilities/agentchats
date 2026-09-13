@@ -3,6 +3,8 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { agentTools } from "../src/cli/mcp-tools.ts";
+import { findCommand, parserSpec } from "../src/cli/contract.ts";
+import { parseArgs } from "../src/cli/args.ts";
 import { runForeground } from "../src/cli/serve.ts";
 
 const roots: string[] = [];
@@ -59,3 +61,9 @@ for (const [signal, exit] of [["SIGINT", 130], ["SIGTERM", 143], ["SIGHUP", 129]
     }
   });
 }
+
+test("serve defaults to dev and accepts the explicit production flag", () => {
+  const spec = parserSpec(findCommand("serve")!);
+  expect(parseArgs([], spec).flags.has("production")).toBe(false);
+  expect(parseArgs(["--production"], spec).flags.has("production")).toBe(true);
+});
