@@ -1,0 +1,59 @@
+import { expect, test } from "@playwright/test"
+import { mkdir } from "node:fs/promises"
+import { mockHistory } from "./fixtures"
+
+test("capture the real components with synthetic review content", async ({
+  page,
+}) => {
+  const errors: string[] = []
+  page.on("pageerror", (error) => errors.push(error.message))
+  page.on("console", (message) => {
+    if (message.type() === "error") errors.push(message.text())
+  })
+  await mockHistory(page)
+  await mkdir("docs/screenshots", { recursive: true })
+  await page.goto("/")
+  await expect(page.locator('[data-slot="message"]')).toHaveCount(4)
+  await expect(
+    page.getByText("The reading surface is now much quieter."),
+  ).toBeVisible()
+  await page
+    .locator('[data-slot="message-scroller-viewport"]')
+    .evaluate((element) => element.scrollTo(0, 0))
+  await page.screenshot({ path: "docs/screenshots/messages.png" })
+  await page
+    .getByRole("button", { name: "Full transcript", exact: true })
+    .click()
+  await expect(page.locator(".activity-group__trigger")).toBeVisible()
+  await page
+    .locator('[data-slot="message-scroller-viewport"]')
+    .evaluate((element) => element.scrollTo(0, 0))
+  await page.screenshot({ path: "docs/screenshots/full.png" })
+  await page.locator(".activity-group__trigger").click()
+  await page.locator(".file-change-event .tool-disclosure__trigger").click()
+  await page
+    .getByRole("button", {
+      name: "Expand diff for src/components/chat/chat-pane.tsx",
+    })
+    .click()
+  await page.locator(".pierre-diff").scrollIntoViewIfNeeded()
+  await expect(
+    page
+      .locator(".pierre-diff")
+      .getByText("groupTranscript", { exact: false })
+      .first(),
+  ).toBeVisible()
+  await page.screenshot({ path: "docs/screenshots/diff.png" })
+  await page.keyboard.press("Control+k")
+  await page.getByRole("combobox").fill("collapse all")
+  await page.getByRole("combobox").press("Enter")
+  await page
+    .locator('[data-slot="message-scroller-viewport"]')
+    .evaluate((element) => element.scrollTo(0, 0))
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.screenshot({ path: "docs/screenshots/mobile.png" })
+  await page.keyboard.press("Control+k")
+  await page.getByRole("combobox").fill("show")
+  await page.screenshot({ path: "docs/screenshots/commands.png" })
+  expect(errors).toEqual([])
+})

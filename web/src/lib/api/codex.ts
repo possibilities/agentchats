@@ -1,0 +1,321 @@
+import type {
+  CodexApiError,
+  CodexThreadDetailResponse,
+  CodexThreadItemRecord,
+  CodexThreadItemsResponse,
+  CodexThreadListResponse,
+  CodexThreadRecord,
+  CodexTranscriptDetail,
+  CodexTurnStatus,
+} from "@/types/codex-db"
+import type { FileChange, Message, ToolActivity, ToolDetailSection } from "@/types/message"
+import type { SessionStatus, SessionSummary } from "@/types/session-summary"
+import type { Thread } from "@/types/thread"
+
+export interface CodexThreadView {
+  thread: Thread
+  summary: SessionSummary
+  latestOrdinal: number
+  status: SessionStatus
+}
+
+export interface CodexThreadUpdate {
+  messages: Message[]
+  latestOrdinal: number
+  status: SessionStatus
+}
+
+type JsonObject = Record<string, unknown>
+
+function isObject(value: unknown): value is JsonObject {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function stringValue(value: unknown) {
+  return typeof value === "string" ? value : ""
+}
+
+function numberValue(value: unknown) {
+  return typeof value === "number" ? value : undefined
+}
+
+function compact(value: string, maximum = 180) {
+  const normalized = value.replace(/\s+/g, " ").trim()
+  return normalized.length > maximum
+    ? normalized.slice(0, maximum - 1).trimEnd() + "…"
+    : normalized
+}
+
+function inlineCode(value: string) {
+  return "`" + value.replaceAll("`", "ˋ") + "`"
+}
+
+function basename(value: string) {
+  const pieces = value.split(/[\\/]/)
+  return pieces.at(-1) || value
+}
+
+function detailSection(label: string, content: unknown): ToolDetailSection[] {
+  const text = stringValue(content).trim()
+  return text ? [{ label, content: text }] : []
+}
+
+function sessionStatus(status: CodexTurnStatus | null): SessionStatus {
+  if (status === "inProgress") return "working"
+  if (status === "failed" || status === "interrupted") return "attention"
+  if (status === "completed") return "complete"
+  return "idle"
+}
+
+function toolState(item: JsonObject): ToolActivity["state"] {
+  const status = stringValue(item.status).toLowerCase()
+  if (["failed", "error", "declined", "cancelled"].includes(status)) return "error"
+  if (["running", "inprogress", "in_progress", "pending"].includes(status)) {
+    return "running"
+  }
+  if (["queued", "requested"].includes(status)) return "queued"
+  return "complete"
+}
+
+function userText(item: JsonObject) {
+  const content = item.content
+  if (!Array.isArray(content)) return stringValue(item.text)
+
+  return content
+    .flatMap((part) => {
+      if (!isObject(part)) return []
+      const text = stringValue(part.text)
+      return text ? [text] : []
+    })
+    .join("\n\n")
+}
+
+function commandActivity(item: JsonObject): { content: string; activity: ToolActivity } {
+  const command = stringValue(item.command) || "Shell command"
+  const state = toolState(item)
+  const exitCode = numberValue(item.exitCode)
+  const result =
+    exitCode === undefined
+      ? state === "running"
+        ? "running"
+        : stringValue(item.status) || "complete"
+      : `exit ${exitCode}`
+
+  return {
+    content: `Ran ${inlineCode(compact(command))} · ${result}`,
+    activity: {
+      name: "Command",
+      detail: compact(command, 110),
+      meta: result,
+      state,
+      sections: [
+        ...detailSection("Command", command),
+        ...detailSection("Working directory", item.cwd),
+        ...detailSection("Output", item.output),
+      ],
+    },
+  }
+}
+
+function fileActivity(item: JsonObject): {
+  content: string
+  activity: ToolActivity
+  fileChanges: FileChange[]
+} {
+  const changes = Array.isArray(item.changes) ? item.changes : []
+  const fileChanges = changes.flatMap((change): FileChange[] => {
+    if (!isObject(change)) return []
+    const filePath = stringValue(change.path)
+    if (!filePath) return []
+    return [{
+      path: filePath,
+      kind: stringValue(change.kind) || "update",
+      movePath: stringValue(change.movePath) || undefined,
+      diff: stringValue(change.diff),
+      diffTruncated: change.diffTruncated === true,
+    }]
+  })
+  const names = fileChanges.map((change) => basename(change.path))
+  const detail = `${fileChanges.length} ${fileChanges.length === 1 ? "file" : "files"}`
+  const shown = names.slice(0, 3).join(", ")
+  const remainder = names.length > 3 ? ` +${names.length - 3}` : ""
+
+  return {
+    content: shown ? `Changed ${shown}${remainder}` : `Changed ${detail}`,
+    activity: {
+      name: "Files",
+      detail: shown ? `${shown}${remainder}` : detail,
+      meta: detail,
+      state: toolState(item),
+    },
+    fileChanges,
+  }
+}
+
+function mcpActivity(item: JsonObject): { content: string; activity: ToolActivity } {
+  const server = stringValue(item.server) || "MCP"
+  const tool = stringValue(item.tool) || "tool"
+  const duration = numberValue(item.durationMs)
+  const detail = duration === undefined ? server : `${server} · ${duration} ms`
+  return {
+    content: `Called ${inlineCode(`${server}.${tool}`)}`,
+    activity: {
+      name: "MCP",
+      detail: `${server}.${tool}`,
+      meta: detail,
+      state: toolState(item),
+      sections: [
+        ...detailSection("Arguments", item.argumentsText),
+        ...detailSection("Result", item.resultText),
+        ...detailSection("Error", item.errorText),
+      ],
+    },
+  }
+}
+
+function searchActivity(item: JsonObject): { content: string; activity: ToolActivity } {
+  const query = compact(stringValue(item.query) || "Web search")
+  const results = numberValue(item.resultCount) ?? 0
+  const detail = results ? `${results} results` : "search"
+  return {
+    content: `Searched for ${inlineCode(query)}`,
+    activity: {
+      name: "Web",
+      detail: query,
+      meta: detail,
+      state: toolState(item),
+      sections: [
+        ...detailSection("Action", item.actionText),
+        ...detailSection("Results", item.resultsText),
+      ],
+    },
+  }
+}
+
+export function mapCodexItem(record: CodexThreadItemRecord): Message | null {
+  if (!isObject(record.item)) return null
+
+  const createdAt = new Date(record.createdAtMs).toISOString()
+  const id = `${record.turnId}:${record.itemId}`
+
+  if (record.itemType === "userMessage") {
+    const content = userText(record.item)
+    return content
+      ? { id, role: "user", content, createdAt, status: "complete" }
+      : null
+  }
+
+  if (record.itemType === "agentMessage") {
+    const content = stringValue(record.item.text)
+    return content
+      ? {
+          id,
+          role: "assistant",
+          content,
+          createdAt,
+          status: "complete",
+        }
+      : null
+  }
+
+  let mapped: {
+    content: string
+    activity: ToolActivity
+    fileChanges?: FileChange[]
+  } | null = null
+  if (record.itemType === "commandExecution") mapped = commandActivity(record.item)
+  if (record.itemType === "fileChange") mapped = fileActivity(record.item)
+  if (record.itemType === "mcpToolCall") mapped = mcpActivity(record.item)
+  if (record.itemType === "webSearch") mapped = searchActivity(record.item)
+  if (!mapped) return null
+
+  return {
+    id,
+    role: "tool",
+    content: mapped.content,
+    createdAt,
+    status: mapped.activity.state === "error" ? "error" : "complete",
+    toolActivity: mapped.activity,
+    fileChanges: mapped.fileChanges,
+  }
+}
+
+function mapItems(items: CodexThreadItemRecord[], detail: CodexTranscriptDetail) {
+  return items.flatMap((item) => {
+    if (
+      detail === "messages" &&
+      item.itemType !== "userMessage" &&
+      item.itemType !== "agentMessage"
+    ) {
+      return []
+    }
+    const message = mapCodexItem(item)
+    return message ? [message] : []
+  })
+}
+
+function mapSession(thread: CodexThreadRecord): SessionSummary {
+  return {
+    id: thread.id,
+    title: thread.title,
+    updatedAt: new Date(thread.recencyAtMs || thread.updatedAtMs).toISOString(),
+    status: sessionStatus(thread.turnStatus),
+    messageCount: thread.messageCount,
+    workspace: basename(thread.cwd),
+    cwd: thread.cwd,
+    model: thread.model ?? undefined,
+  }
+}
+
+async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
+  const response = await fetch(url, { signal, headers: { Accept: "application/json" } })
+  const data = (await response.json()) as T | CodexApiError
+  if (!response.ok) {
+    throw new Error(isObject(data) && typeof data.error === "string" ? data.error : response.statusText)
+  }
+  return data as T
+}
+
+export async function fetchSessions(signal?: AbortSignal) {
+  const response = await getJson<CodexThreadListResponse>("/api/threads?limit=50", signal)
+  return response.threads.map(mapSession)
+}
+
+export async function fetchThread(
+  threadId: string,
+  detail: CodexTranscriptDetail,
+  signal?: AbortSignal,
+): Promise<CodexThreadView> {
+  const response = await getJson<CodexThreadDetailResponse>(
+    `/api/threads/${encodeURIComponent(threadId)}?detail=${detail}`,
+    signal,
+  )
+  return {
+    thread: {
+      id: response.thread.id,
+      sessionId: response.thread.id,
+      title: response.thread.title,
+      messages: mapItems(response.items, detail),
+    },
+    summary: mapSession(response.thread),
+    latestOrdinal: response.latestOrdinal,
+    status: sessionStatus(response.turnStatus),
+  }
+}
+
+export async function fetchThreadItems(
+  threadId: string,
+  afterOrdinal: number,
+  detail: CodexTranscriptDetail,
+  signal?: AbortSignal,
+): Promise<CodexThreadUpdate> {
+  const response = await getJson<CodexThreadItemsResponse>(
+    `/api/threads/${encodeURIComponent(threadId)}/items?after_ordinal=${afterOrdinal}&detail=${detail}`,
+    signal,
+  )
+  return {
+    messages: mapItems(response.items, detail),
+    latestOrdinal: response.latestOrdinal,
+    status: sessionStatus(response.turnStatus),
+  }
+}
