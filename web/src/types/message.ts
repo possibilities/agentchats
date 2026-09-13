@@ -38,4 +38,13 @@ export interface Message {
   status: MessageStatus
   toolActivity?: ToolActivity
   fileChanges?: FileChange[]
+  /** Optional user/assistant body interpretation; content remains the original record. */
+  presentation?: MessagePresentation
+}
+
+/** Provider-neutral, plain-text presentation of a structured message payload. */
+export interface MessagePresentation {
+  title: string
+  body: string
+  details?: readonly { label: string; content: string }[]
 }

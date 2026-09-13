@@ -63,6 +63,7 @@ updates its original position; cancel restores the previous composer draft.
 
 Agentvoice wires native app-server transport and exact thread/turn identity.
 Other hosts can supply their own transport or omit unsupported callbacks. The
-package ships reusable controls, not a provider client. Agentchats can leave the
-composer unused; its existing reader endpoints, local-origin guard and committed
-history boundary remain read-only.
+package ships reusable controls, not a provider client. The product mounts the
+composer only in agentvoice's Agent pane, never its Voice pane or the agentchats
+reader. Agentchats exports the component without mounting it; its existing reader
+endpoints, local-origin guard and committed-history boundary remain read-only.

@@ -1,4 +1,5 @@
 import { transcriptTitle } from "../transcript-title"
+import { parseCodexMessagePresentation } from "./codex-presentation"
 import type {
   CodexApiError,
   CodexThreadDetailResponse,
@@ -205,7 +206,7 @@ export function mapCodexItem(record: CodexThreadItemRecord): Message | null {
   if (record.itemType === "userMessage") {
     const content = userText(record.item)
     return content
-      ? { id, role: "user", content, createdAt, status: "complete" }
+      ? { id, role: "user", content, createdAt, status: "complete", presentation: parseCodexMessagePresentation(content) }
       : null
   }
 

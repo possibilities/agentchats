@@ -268,6 +268,12 @@ test("desktop-like composer and queue reflow on a narrow host without touching p
   await page
     .getByRole("textbox", { name: "Message Agent", exact: true })
     .fill("Keep the Human and Agent labels.")
+  await expect(page.getByText("Message Agent", { exact: true })).toHaveCount(0)
+  const input = page.getByRole("textbox", { name: "Message Agent", exact: true })
+  await expect(input).toHaveCSS("border-top-width", "0px")
+  await expect(input).toHaveCSS("box-shadow", "none")
+  await expect(input).toHaveCSS("outline-style", "none")
+  await expect(page.locator('[data-slot="input-group"]')).not.toHaveCSS("box-shadow", "none")
   await expect(
     page.getByRole("button", { name: "Steer", exact: true }).last(),
   ).toBeInViewport()

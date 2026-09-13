@@ -9,6 +9,10 @@ A local reading surface for Codex conversations. The operator's primary task is 
 - User messages are restrained, right-aligned bubbles. Codex replies use the open canvas, with no avatar or repeated enclosing card.
 - Full groups consecutive activities between messages. The summary exposes counts and failures. Opening it reveals individually collapsed rows; its summary stays reachable while scrolling through the group. Each file diff opens independently.
 - Preserve the reader's place and disclosure state across polling. Watch appends committed items without a refresh animation. Errors remain visible above the transcript and offer recovery.
+- The shared reading column uses up to 1120px, with 32px side padding that shrinks
+  to 20px below an 800px container and 16px below 400px. Use container width so
+  embedded lanes receive the same treatment. Message gaps are 24px (20px in small
+  lanes), author/body gaps 6px; retain the 44px tool disclosure targets.
 - No inactive composer, Voice surface, channel routing, simulated audio, or future integration slots.
 
 ## Design sources and decisions

@@ -5,6 +5,7 @@ export type {
   ToolActivity,
   ToolDetailSection,
   FileChange,
+  MessagePresentation as TranscriptMessagePresentation,
 } from "../types/message"
 export { groupTranscript, activitySummary } from "../lib/transcript"
 export type { TranscriptEntry as TranscriptBlock } from "../lib/transcript"

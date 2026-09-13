@@ -12,6 +12,7 @@ import {
   type TranscriptMessage,
 } from "@agentchats/transcript"
 import "@agentchats/transcript/styles.css"
+import { parseCodexMessagePresentation } from "@agentchats/transcript/codex"
 
 const message = (
   id: string,
@@ -106,7 +107,12 @@ function DirectConsumer() {
   const [loading, setLoading] = useState(false)
   const [follow, setFollow] = useState(true)
   Object.assign(window, {
-    directTranscript: { setMessages, setId, setDetail, setLoading, setFollow },
+    directTranscript: {
+      setMessages, setId, setDetail, setLoading, setFollow,
+      setCodexMessages: (messages: TranscriptMessage[]) => setMessages(messages.map((message) => ({
+        ...message, presentation: parseCodexMessagePresentation(message.content),
+      }))),
+    },
   })
   return (
     <div style={{ height: 500, display: "flex", flexDirection: "column" }}>

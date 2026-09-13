@@ -191,6 +191,8 @@ Its data, React, Codex HTTP adapter, and opt-in scoped styles have separate entr
 points. The reader uses the same Transcript component; the package exports no
 app shell or database reader. See the [package guide](packages/transcript/README.md)
 for composition, live-source semantics, building, and agentvoice boundaries.
+The exported `TranscriptComposer` is for host UIs. It is mounted only in
+agentvoice's Agent pane; this reader does not mount a composer and stays read-only.
 
 ## Structure and provenance
 

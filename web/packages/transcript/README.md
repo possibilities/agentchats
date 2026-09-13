@@ -1,6 +1,6 @@
 # @agentchats/transcript
 
-Composable Human / Agent transcripts for React 19. This is the 0.2 API,
+Composable Human / Agent transcripts for React 19. This is the 0.3 API,
 prepared for local packaging; it has not been published to a registry.
 
 The reader in this repository uses the same `Transcript` component. The package
@@ -12,7 +12,7 @@ ships no app shell, session picker, command UI, database reader, or server proce
 | --- | --- |
 | `@agentchats/transcript` | `TranscriptMessage`, `TranscriptBlock`, snapshot/update/source types, `groupTranscript`, `activitySummary`, `mergeTranscript` |
 | `@agentchats/transcript/react` | `Transcript`, `TranscriptBlock`, `TranscriptComposer`, `useTranscript` and their props/state types |
-| `@agentchats/transcript/codex` | `createCodexTranscriptSource`, `CodexTransportOptions` |
+| `@agentchats/transcript/codex` | `createCodexTranscriptSource`, `parseCodexMessagePresentation`, `CodexTransportOptions` |
 | `@agentchats/transcript/styles.css` | Optional compiled arthack styles; no consumer Tailwind setup needed |
 
 The data entry has no React, browser, provider, or storage dependency. The React
@@ -41,6 +41,10 @@ The host owns loading/error copy, titles, and controls. `aria-label` names each
 lane; `viewportId` supplies a unique DOM anchor if needed. Constrain the parent's
 height so the transcript can scroll. Changing `transcriptId`, detail, or loading
 completion resets to the bottom. Idle and working transcripts behave identically.
+The shared reading column uses up to 1120 pixels, with 32-pixel side padding that
+reduces to 20 or 16 pixels based on the container width. Message gaps are 24 pixels
+(20 in the narrowest lanes); author-to-body spacing is 6 pixels. Composer and
+transcript content align, including in host-owned side-by-side lanes.
 Within 64 pixels of the bottom, new messages and growing same-ID revisions stay
 at the end. Scrolling farther away preserves the reader's place and shows
 **1 new message** / **N new messages**, counting newly added visible message IDs
@@ -66,7 +70,44 @@ activity run; its ID is the first message ID. Both components include their own
 required providers. Human / Agent are the presentation labels; standard data
 roles remain `user`, `assistant`, `tool`, and `system`.
 
+## Structured message presentation
+
+User and assistant messages can carry `TranscriptMessage.presentation`, a provider-neutral
+`TranscriptMessagePresentation`: `{ title, body, details?: [{ label, content }] }`.
+Title, body and detail contents are plain text. `Transcript` and `TranscriptBlock`
+show the body, collapsible details, and **Original message** for the exact
+`message.content`. This metadata never overwrites the source record or changes
+the Human / Agent author label.
+
+For Codex voice envelopes, the reader's adapter uses the exported helper:
+
+```ts
+import { parseCodexMessagePresentation } from '@agentchats/transcript/codex'
+
+const message = {
+  ...original,
+  presentation: parseCodexMessagePresentation(original.content),
+}
+```
+
+Complete canonical `<realtime_delegation>` envelopes show the actual `input`
+under **Via Voice**, with `transcript_delta` in collapsed **Voice context**.
+Identical sole-user context is omitted from the summary. `transcript_tail_flush`
+is labeled **Voice session ended**, with context and handoff instructions kept
+in separate disclosures. Standard `<realtime_conversation>` start/end notices
+also have readable summaries. XML entities are decoded once; no HTML is executed.
+
+The parser returns `undefined` for partial/malformed envelopes, unknown fields
+or sources, code examples, mixed prose, and custom conversation instructions.
+Those messages retain normal rendering. Parsing belongs in the provider adapter;
+the React components only consume presentation metadata. See
+[the presentation decision](../../../docs/adr/0005-structured-transcript-presentation.md)
+for source evidence and fallback boundaries.
+
 ## Agent composer
+
+This is a package export for hosts. The product mounts it only in agentvoice's
+Agent pane, never its Voice pane or the agentchats reader UI.
 
 Render `TranscriptComposer` as a sibling below the scrollable `Transcript`, inside
 the same height-constrained flex column. Do not put it in the scrolling `footer`.

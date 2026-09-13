@@ -282,13 +282,12 @@ function Composer({
             submit()
           }}
         >
-          <label className="transcript-composer__label" htmlFor={inputId}>
-            {editing ? "Edit queued message" : label}
-          </label>
+          {editing ? <p className="transcript-composer__label">Edit queued message</p> : null}
           <InputGroup>
             <InputGroupTextarea
               ref={input}
               id={inputId}
+              aria-label={editing ? "Edit queued message" : label}
               aria-describedby={error ? `${inputId}-error` : undefined}
               aria-invalid={Boolean(error)}
               placeholder={placeholder}

@@ -13,7 +13,12 @@ const append = (page: Page, ids: string[], role = "assistant") => page.evaluate(
 
 test.beforeEach(async ({ page }) => {
   await page.goto("/tests/consumer.html?direct=1")
-  await expect.poll(() => bottomGap(page.getByRole("region", { name: "Direct transcript" }))).toBeLessThan(2)
+  const viewport = page.getByRole("region", { name: "Direct transcript" })
+  // Initial end positioning can still be settling after the first zero-gap
+  // frame. Exercise deliberate reading input once that positioning is idle.
+  await page.evaluate(() => document.fonts.ready.then(() => undefined))
+  await expect(viewport).not.toHaveAttribute("data-autoscrolling", "")
+  await expect.poll(() => bottomGap(viewport)).toBeLessThan(2)
 })
 
 test("direct props follow large appends and same-ID growth after idle wheel input at the end", async ({ page }) => {
@@ -37,15 +42,33 @@ test("direct props follow large appends and same-ID growth after idle wheel inpu
 
 test("near-bottom follows; reading earlier counts arrivals, and keyboard activation resumes follow", async ({ page }) => {
   const viewport = page.getByRole("region", { name: "Direct transcript" })
+  await viewport.evaluate((element) => {
+    // Lazy content can resize and resume near-bottom following on the next
+    // frame. Record the actual wheel position instead of requiring it to stay.
+    const observe = () => {
+      const gap = element.scrollHeight - element.clientHeight - element.scrollTop
+      if (gap > 20 && gap <= 64) {
+        element.setAttribute("data-test-near-bottom", "true")
+        element.removeEventListener("scroll", observe)
+      }
+    }
+    element.addEventListener("scroll", observe)
+  })
   await viewport.hover()
   await page.mouse.wheel(0, -32)
-  await expect.poll(() => bottomGap(viewport)).toBeGreaterThan(20)
+  await expect(viewport).toHaveAttribute("data-test-near-bottom", "true")
   await append(page, ["near-bottom"])
   await expect.poll(() => bottomGap(viewport)).toBeLessThan(2)
   await page.mouse.wheel(0, -900)
   const jump = page.getByRole("button", { name: "Jump to latest", exact: true })
   await expect(jump).toHaveAttribute("data-active", "true")
-  const before = await viewport.evaluate((element) => element.scrollTop)
+  const before = await viewport.evaluate((element) => {
+    const bounds = element.getBoundingClientRect()
+    const anchor = [...element.querySelectorAll('[data-slot="message-scroller-item"]')]
+      .find((item) => item.getBoundingClientRect().bottom > bounds.top)!
+    anchor.setAttribute("data-test-reading-anchor", "true")
+    return anchor.getBoundingClientRect().top
+  })
   await append(page, ["unread-one"])
   const chip = page.getByRole("button", { name: "1 new message. Jump to latest", exact: true })
   await expect(chip).toBeVisible()
@@ -55,7 +78,10 @@ test("near-bottom follows; reading earlier counts arrivals, and keyboard activat
     messages.map((message) => ({ ...message, content: `${message.content} ` })),
   ))
   await expect(page.getByRole("button", { name: "3 new messages. Jump to latest", exact: true })).toBeVisible()
-  expect(Math.abs(await viewport.evaluate((element) => element.scrollTop) - before)).toBeLessThan(5)
+  // Browser scroll anchoring may adjust scrollTop as lazy off-screen content
+  // settles. The visible message must remain in the same reading position.
+  const after = await viewport.locator('[data-test-reading-anchor]').evaluate((element) => element.getBoundingClientRect().top)
+  expect(Math.abs(after - before)).toBeLessThan(5)
   await page.getByRole("button", { name: "3 new messages. Jump to latest", exact: true }).focus()
   await page.keyboard.press("Enter")
   await expect.poll(() => bottomGap(viewport)).toBeLessThan(2)

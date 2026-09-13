@@ -1,6 +1,6 @@
 import { memo } from "react"
 import { FileChangeMessage } from "@/components/chat/file-change-message"
-import { MarkdownContent } from "@/components/chat/markdown-content"
+import { MessageBody } from "@/components/chat/message-body"
 import { ToolActivityMessage } from "@/components/chat/tool-activity-message"
 import { Bubble, BubbleContent } from "@/components/ui/bubble"
 import {
@@ -43,7 +43,7 @@ export const ChatMessage = memo(function ChatMessage({
           variant={isUser ? "secondary" : "ghost"}
         >
           <BubbleContent>
-            <MarkdownContent content={message.content} />
+            <MessageBody message={message} />
           </BubbleContent>
         </Bubble>
       </MessageContent>

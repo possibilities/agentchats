@@ -51,10 +51,11 @@ try {
   await writeFile(
     path.join(directory, "consumer.tsx"),
     `
-import { groupTranscript, mergeTranscript, type TranscriptMessage, type TranscriptSource } from '@agentchats/transcript'
+import { groupTranscript, mergeTranscript, type TranscriptMessage, type TranscriptMessagePresentation, type TranscriptSource } from '@agentchats/transcript'
 import { Transcript, TranscriptBlock, TranscriptComposer, type TranscriptQueuedMessage, useTranscript } from '@agentchats/transcript/react'
-import { createCodexTranscriptSource } from '@agentchats/transcript/codex'
-const messages: TranscriptMessage[] = [{ id: 'one', role: 'user', content: 'Hello', status: 'complete' }]
+import { createCodexTranscriptSource, parseCodexMessagePresentation } from '@agentchats/transcript/codex'
+const presentation: TranscriptMessagePresentation | undefined = parseCodexMessagePresentation('<realtime_delegation><input>Hello</input></realtime_delegation>')
+const messages: TranscriptMessage[] = [{ id: 'one', role: 'user', content: 'Hello', status: 'complete', presentation }]
 const source: TranscriptSource = createCodexTranscriptSource()
 const queue: TranscriptQueuedMessage[] = [{ id: 'q', text: 'Next', pausedReason: 'Stopped', canResume: true }]
 export function Consumer() {

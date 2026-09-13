@@ -13,6 +13,9 @@ records the reduced reader and the portable component/live-source API.
 [0004: Host-owned Agent interaction](0004-host-owned-agent-interaction.md)
 records the desktop-style composer and host-owned queue/steer/interrupt boundary.
 
+[0005: Structured transcript presentation](0005-structured-transcript-presentation.md)
+records provider-owned envelope interpretation and preserved original messages.
+
 ## Withdrawn viewer experiment
 
 The earlier `0001-viewer-on-vendored-opencode-renderer.md` belonged to a
