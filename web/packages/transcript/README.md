@@ -78,7 +78,9 @@ reloads history. It does not read browser storage or change the URL.
 
 A source implements `load({ id, detail, signal })` and
 `poll({ id, detail, cursor, signal })`. `load` returns a full ordered snapshot;
-`poll` returns an ordered delta. IDs must be unique within a transcript and stable
+`poll` returns an ordered delta. Message `createdAt` is optional: omit it when the source does not report a time;
+the renderer then shows the author without a clock. Never synthesize timestamps
+for historical items. IDs must be unique within a transcript and stable
 across updates. New IDs append; an existing ID replaces that message in place
 (e.g. streaming voice text). Omitted IDs are retained. Deletion, insertion before
 existing messages, and reordered history require a fresh full load. Return the

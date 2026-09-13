@@ -21,7 +21,6 @@ const message = (
   id,
   role,
   content,
-  createdAt: "2026-09-13T12:00:00Z",
   status: "complete",
 })
 const initial = [

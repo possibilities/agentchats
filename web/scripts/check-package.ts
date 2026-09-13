@@ -54,7 +54,7 @@ try {
 import { groupTranscript, mergeTranscript, type TranscriptMessage, type TranscriptSource } from '@agentchats/transcript'
 import { Transcript, TranscriptBlock, useTranscript } from '@agentchats/transcript/react'
 import { createCodexTranscriptSource } from '@agentchats/transcript/codex'
-const messages: TranscriptMessage[] = [{ id: 'one', role: 'user', content: 'Hello', status: 'complete', createdAt: '2026-09-13T12:00:00Z' }]
+const messages: TranscriptMessage[] = [{ id: 'one', role: 'user', content: 'Hello', status: 'complete' }]
 const source: TranscriptSource = createCodexTranscriptSource()
 export function Consumer() {
   const { snapshot } = useTranscript(source, null)

@@ -31,7 +31,8 @@ export interface Message {
   id: string
   role: MessageRole
   content: string
-  createdAt: string
+  /** Omit when the source does not report a timestamp. */
+  createdAt?: string
   status: MessageStatus
   toolActivity?: ToolActivity
   fileChanges?: FileChange[]

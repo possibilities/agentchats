@@ -29,12 +29,14 @@ export const ChatMessage = memo(function ChatMessage({
       <MessageContent>
         <MessageHeader>
           <span className="message-author">{isUser ? "Human" : "Agent"}</span>
-          <time
-            dateTime={message.createdAt}
-            title={new Date(message.createdAt).toLocaleString()}
-          >
-            {formatClockTime(message.createdAt)}
-          </time>
+          {message.createdAt ? (
+            <time
+              dateTime={message.createdAt}
+              title={new Date(message.createdAt).toLocaleString()}
+            >
+              {formatClockTime(message.createdAt)}
+            </time>
+          ) : null}
         </MessageHeader>
         <Bubble
           align={isUser ? "end" : "start"}
