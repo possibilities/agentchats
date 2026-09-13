@@ -39,6 +39,7 @@ test("Messages contains only conversation; Full collapses 100 activities and per
   await mockHistory(page)
   await page.goto("/")
   await expect(page.locator('[data-slot="message"]')).toHaveCount(4)
+  await expect(page.locator(".message-author")).toHaveText(["Human", "Agent", "Agent", "Human"])
   await expect(page.locator(".activity-group")).toHaveCount(0)
   await expect(page.locator("textarea")).toHaveCount(0)
   await expect(page.getByRole("button", { name: /Voice/ })).toHaveCount(0)
@@ -129,7 +130,7 @@ test("live polling appends once, preserves disclosure state, recovers errors, an
   ).toBe(true)
 })
 
-test("session search, keyboard command palette, density persistence, and session navigation", async ({
+test("session search, density persistence, and session navigation without commands", async ({
   page,
 }) => {
   await mockHistory(page)
@@ -139,21 +140,17 @@ test("session search, keyboard command palette, density persistence, and session
     page.getByRole("list", { name: "Recent sessions" }).getByRole("button"),
   ).toHaveCount(1)
   await page.getByRole("button", { name: "Clear session search" }).click()
+  await expect(page.getByRole("button", { name: "Open commands" })).toHaveCount(0)
   await page.keyboard.press("Control+k")
-  await expect(page.getByRole("dialog")).toBeVisible()
-  const search = page.getByRole("combobox", { name: "Find a command" })
-  await expect(search).toBeFocused()
-  await search.fill("full transcript")
-  await search.press("Enter")
   await expect(page.getByRole("dialog")).toHaveCount(0)
+  await expect(page.getByRole("combobox")).toHaveCount(0)
+  await page.getByRole("button", { name: "Full transcript", exact: true }).click()
   await expect(page.locator(".activity-group__trigger")).toBeVisible()
   await page.reload()
   await expect(
     page.getByRole("button", { name: "Full transcript", exact: true }),
   ).toHaveAttribute("aria-pressed", "true")
-  await page.keyboard.press("Control+k")
-  await page.getByRole("combobox").fill("usage readings")
-  await page.getByRole("combobox").press("Enter")
+  await page.getByRole("button", { name: /Keep usage readings stable/ }).click()
   await expect(page).toHaveURL(/thread=session-1/)
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(
     "Keep usage readings stable during refresh",
@@ -232,11 +229,13 @@ test("thread retry works and live updates respect a reader who scrolls away", as
   await expect(page.getByRole("alert")).toHaveCount(0)
   await page.getByRole("button", { name: "Watch live", exact: true }).click()
   await expect.poll(() => state.polls).toBeGreaterThan(0)
+  const initialTop = await page.locator(viewport).evaluate((element) => element.scrollTop)
   await page.locator(viewport).hover()
   await page.mouse.wheel(0, -1200)
+  await expect.poll(() => page.locator(viewport).evaluate((element) => element.scrollTop)).toBeLessThan(initialTop - 1100)
   await expect(
     page.getByRole("button", { name: "Jump to latest" }),
-  ).toBeVisible()
+  ).toHaveAttribute("data-active", "true")
   const before = await page
     .locator(viewport)
     .evaluate((element) => element.scrollTop)
@@ -256,4 +255,40 @@ test("thread retry works and live updates respect a reader who scrolls away", as
   await expect(
     page.getByText("An update while reading earlier messages."),
   ).toBeInViewport()
+})
+
+for (const working of [false, true]) {
+  test(`opens delayed ${working ? "working" : "idle"} history at the bottom with Watch off`, async ({ page }) => {
+    await mockHistory(page, { long: true, threadDelay: 150, working })
+    await page.goto("/?thread=design-review")
+    const bottomGap = () => page.locator(viewport).evaluate(
+      (element) => element.scrollHeight - element.clientHeight - element.scrollTop,
+    )
+    await expect(page.locator('[data-slot="message"]')).toHaveCount(5)
+    await expect.poll(bottomGap).toBeLessThan(2)
+    await expect(page.getByRole("button", { name: "Watch live", exact: true })).toHaveAttribute("aria-pressed", "false")
+    await page.getByRole("button", { name: "Full transcript", exact: true }).click()
+    await expect(page.locator(".activity-group__trigger")).toHaveCount(1)
+    await expect.poll(bottomGap).toBeLessThan(2)
+    await page.getByRole("button", { name: /Keep usage readings stable/ }).click()
+    await expect(page).toHaveURL(/thread=session-1/)
+    await expect(page.locator('[data-slot="message"]')).toHaveCount(5)
+    await expect.poll(bottomGap).toBeLessThan(2)
+    await page.reload()
+    await expect(page.locator('[data-slot="message"]')).toHaveCount(5)
+    await expect.poll(bottomGap).toBeLessThan(2)
+  })
+}
+
+test("follows new committed messages while the agent stays idle", async ({ page }) => {
+  const state = await mockHistory(page, { long: true })
+  await page.goto("/")
+  await expect(page.locator('[data-slot="message"]')).toHaveCount(5)
+  await page.getByRole("button", { name: "Watch live", exact: true }).click()
+  await expect.poll(() => state.polls).toBeGreaterThan(0)
+  state.live = [item(105, "agentMessage", { text: "Committed while idle." })]
+  await expect(page.getByText("Committed while idle.", { exact: true })).toBeInViewport()
+  await expect.poll(() => page.locator(viewport).evaluate(
+    (element) => element.scrollHeight - element.clientHeight - element.scrollTop,
+  )).toBeLessThan(2)
 })

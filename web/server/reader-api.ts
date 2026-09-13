@@ -179,7 +179,7 @@ function codexHome(env: Environ) {
 
 function openReadOnly(databasePath: string) {
   if (!existsSync(databasePath)) {
-    throw new Error(`Codex database not found: ${databasePath}`)
+    throw new Error(`Agent history database not found: ${databasePath}`)
   }
 
   const database = new Database(databasePath, { readonly: true })
@@ -240,7 +240,7 @@ function mapThread(
 ): CodexThreadRecord {
   return {
     id: row.id,
-    title: row.title || row.preview || "Untitled Codex thread",
+    title: row.title || row.preview || "Untitled Agent conversation",
     cwd: row.cwd,
     rolloutPath: row.rollout_path,
     source: row.source,

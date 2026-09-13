@@ -42,16 +42,11 @@ test("capture the real components with synthetic review content", async ({
       .first(),
   ).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath("diff.png") })
-  await page.keyboard.press("Control+k")
-  await page.getByRole("combobox").fill("collapse all")
-  await page.getByRole("combobox").press("Enter")
+  await page.locator(".activity-group__trigger").click()
   await page
     .locator('[data-slot="message-scroller-viewport"]')
     .evaluate((element) => element.scrollTo(0, 0))
   await page.setViewportSize({ width: 390, height: 844 })
   await page.screenshot({ path: testInfo.outputPath("mobile.png") })
-  await page.keyboard.press("Control+k")
-  await page.getByRole("combobox").fill("show")
-  await page.screenshot({ path: testInfo.outputPath("commands.png") })
   expect(errors).toEqual([])
 })

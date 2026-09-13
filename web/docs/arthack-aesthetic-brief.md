@@ -38,10 +38,10 @@ Signal Room and fleet TUI shell contracts are **not** this web app's brand syste
 
 Geist carries prose and controls; Geist Mono carries code, workspace names, and timestamps. The reading scale is 15px / 1.75, metadata starts at 12px, the conversation title is 24px, and spacing follows an 8px rhythm. The product deliberately uses arthack's dark appearance. No theme picker or decorative motion is needed for the reading task.
 
-`Ctrl+K` opens Commands and works by keyboard or pointer. The operator's key audit found `Cmd+K` owned by skhd; this app does not claim it. Search results, selected state, and modal focus remain explicit.
+
 
 ## Verification
 
-`npm run check` checks lint, types, and the production build. `npm test` exercises 100-activity runs, per-file Pierre rendering, density persistence, keyboard commands, session search, mobile selection, polling recovery, and long content. The visual test captures production components using test-only synthetic API responses. The pictures establish composition; behavioral assertions establish interaction.
+`npm run check` checks lint, types, and the production build. `npm test` exercises 100-activity runs, per-file Pierre rendering, density persistence, initial and idle scrolling, session search, mobile selection, polling recovery, and long content. The visual test captures production components using test-only synthetic API responses. The pictures establish composition; behavioral assertions establish interaction.
 
 The API retains read-only discovery in `state_5.sqlite` and committed history / follow in `thread_history_1.sqlite`. No database or network write surface is introduced.

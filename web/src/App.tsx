@@ -1,10 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { SlidersHorizontalIcon } from "lucide-react"
 import { ChatPane } from "@/components/chat/chat-pane"
-import {
-  CommandPalette,
-  type AppCommand,
-} from "@/components/layout/command-palette"
 import { SessionControls } from "@/components/layout/session-controls"
 import { SessionSidebar } from "@/components/layout/session-sidebar"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -62,8 +57,6 @@ function App() {
   const [threadError, setThreadError] = useState<string | null>(null)
   const [sessionsRevision, setSessionsRevision] = useState(0)
   const [threadRevision, setThreadRevision] = useState(0)
-  const [collapseRevision, setCollapseRevision] = useState(0)
-  const [commandsOpen, setCommandsOpen] = useState(false)
   const latestOrdinal = useRef(-1)
   const knownIds = useRef(new Set<string>())
 
@@ -203,23 +196,6 @@ function App() {
     }
   }, [activeSessionId, detail, ready, watching])
 
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      // Ctrl+K is available across the operator's stack; Cmd+K belongs to skhd.
-      if (
-        event.ctrlKey &&
-        !event.metaKey &&
-        !event.altKey &&
-        event.key.toLowerCase() === "k"
-      ) {
-        event.preventDefault()
-        setCommandsOpen((current) => !current)
-      }
-    }
-    window.addEventListener("keydown", onKeyDown)
-    return () => window.removeEventListener("keydown", onKeyDown)
-  }, [])
-
   const selectSession = (id: string) => {
     if (id === activeSessionId) return
     setWatching(false)
@@ -262,46 +238,6 @@ function App() {
     onDetailChange: changeDetail,
     onToggleWatch: () => setWatching((current) => !current),
   }
-  const commands: AppCommand[] = [
-    {
-      id: "messages",
-      label: "Show messages only",
-      context: "Transcript",
-      run: () => changeDetail("messages"),
-    },
-    {
-      id: "full",
-      label: "Show full transcript",
-      context: "Transcript",
-      run: () => changeDetail("full"),
-    },
-    {
-      id: "collapse",
-      label: "Collapse all activity",
-      context: "Transcript",
-      disabled: detail !== "full",
-      run: () => setCollapseRevision((current) => current + 1),
-    },
-    {
-      id: "watch",
-      label: watching ? "Stop watching" : "Watch live",
-      context: "Selected session",
-      disabled: watchDisabled,
-      run: controls.onToggleWatch,
-    },
-    {
-      id: "refresh",
-      label: "Refresh sessions",
-      context: "Session index",
-      run: refreshSessions,
-    },
-    ...sessions.map((session) => ({
-      id: session.id,
-      label: session.title,
-      context: session.workspace ?? "Codex",
-      run: () => selectSession(session.id),
-    })),
-  ]
 
   return (
     <TooltipProvider>
@@ -319,7 +255,6 @@ function App() {
           error={sessionsError}
           onSelect={selectSession}
           onRefresh={refreshSessions}
-          onCommands={() => setCommandsOpen(true)}
         />
         <SidebarInset className="min-h-0 overflow-hidden">
           <div className="conversation-shell">
@@ -335,15 +270,6 @@ function App() {
               </div>
               <div className="conversation-toolbar__actions">
                 <SessionControls {...controls} />
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label="Open commands"
-                  title="Commands (Ctrl+K)"
-                  onClick={() => setCommandsOpen(true)}
-                >
-                  <SlidersHorizontalIcon />
-                </Button>
               </div>
             </div>
             {threadError ? (
@@ -370,19 +296,11 @@ function App() {
               messages={visibleMessages}
               watching={watching}
               active={activeView?.status === "working"}
-              collapseRevision={collapseRevision}
               loading={threadLoading}
               full={detail === "full"}
             />
           </div>
         </SidebarInset>
-        {commandsOpen ? (
-          <CommandPalette
-            open
-            onOpenChange={setCommandsOpen}
-            commands={commands}
-          />
-        ) : null}
       </SidebarProvider>
     </TooltipProvider>
   )

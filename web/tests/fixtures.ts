@@ -118,7 +118,7 @@ export const items = [
 
 export async function mockHistory(
   page: Page,
-  options: { empty?: boolean; long?: boolean } = {},
+  options: { empty?: boolean; long?: boolean; threadDelay?: number; working?: boolean } = {},
 ) {
   const state = {
     polls: 0,
@@ -149,6 +149,8 @@ export async function mockHistory(
       })
       return
     }
+    if (!isPoll && options.threadDelay)
+      await new Promise((resolve) => setTimeout(resolve, options.threadDelay))
     const id = decodeURIComponent(url.pathname.split("/")[3])
     const selected = sessions.find((session) => session.id === id) ?? thread
     let source = options.empty
@@ -180,7 +182,7 @@ export async function mockHistory(
         thread: selected,
         items: source.map((record) => ({ ...record, threadId: id })),
         latestOrdinal: state.live.at(-1)?.rolloutOrdinal ?? 103,
-        turnStatus: "completed",
+        turnStatus: options.working ? "inProgress" : "completed",
       },
     })
   })

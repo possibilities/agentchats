@@ -27,7 +27,6 @@ interface ChatPaneProps {
   messages: Message[]
   watching: boolean
   active: boolean
-  collapseRevision: number
   loading: boolean
   full: boolean
 }
@@ -39,7 +38,6 @@ export function ChatPane({
   messages,
   watching,
   active,
-  collapseRevision,
   loading,
   full,
 }: ChatPaneProps) {
@@ -51,9 +49,9 @@ export function ChatPane({
   return (
     <section className="chat-pane" aria-label="Conversation">
       <MessageScrollerProvider
-        autoScroll={watching}
+        autoScroll
         defaultScrollPosition="end"
-        key={id}
+        key={`${id}:${loading ? "loading" : "ready"}`}
       >
         <MessageScroller>
           <MessageScrollerViewport
@@ -81,11 +79,11 @@ export function ChatPane({
                         ? "Opening conversation…"
                         : session
                           ? "No messages yet"
-                          : "Your conversations, in one place"}
+                          : "Human / Agent conversations"}
                     </EmptyTitle>
                     <EmptyDescription>
                       {loading
-                        ? "Reading your local history."
+                        ? "Reading local history."
                         : session
                           ? "Watch this thread to follow new messages as they arrive."
                           : "Select a session to read the conversation and inspect the work behind it."}
@@ -96,10 +94,7 @@ export function ChatPane({
               {entries.map((entry) => (
                 <MessageScrollerItem key={entry.id} messageId={entry.id}>
                   {entry.kind === "activity" ? (
-                    <ActivityGroup
-                      key={collapseRevision}
-                      messages={entry.messages}
-                    />
+                    <ActivityGroup messages={entry.messages} />
                   ) : (
                     <ChatMessage message={entry.message} />
                   )}
@@ -108,7 +103,7 @@ export function ChatPane({
               {active ? (
                 <div className="thread-working" role="status">
                   <span aria-hidden="true">●</span>
-                  {watching ? "Codex is working" : "Last observed working"}
+                  {watching ? "Agent is working" : "Agent last observed working"}
                 </div>
               ) : watching ? (
                 <div className="thread-watching" role="status">

@@ -81,13 +81,12 @@ this machine's history.
   consecutive runs fold into summaries with counts and failures. Expand a run
   for individually collapsed tools. Each file has an initially collapsed, lazy
   Pierre diff. Reasoning stays hidden in both densities.
-- **Watch live** polls committed items about once per second, appends unseen
+- Conversations open at the latest message, including idle agents and with Watch
+  off. **Watch live** polls committed items about once per second, appends unseen
   messages, and follows the live edge. Scrolling away releases following;
   **Jump to latest** returns. Disclosure state and scroll position survive
   polling. A failed read keeps the last conversation and offers Retry.
-- **Commands**, opened with the sliders button or **Ctrl+K**, switches density,
-  collapses activity, controls Watch, reloads the session list, and switches
-  sessions. Arrow keys, Enter, and Escape work in the palette.
+
 
 The density preference survives reloads in the current browser session. This app
 reads conversations; it does not send messages. Claude UI support is out of scope
@@ -156,8 +155,7 @@ ignored `web/test-results/`, so routine checks do not rewrite tracked evidence.
 
 The imported, approved review images contain **synthetic conversations**:
 [Messages](docs/screenshots/messages.png) · [Full](docs/screenshots/full.png) ·
-[File diff](docs/screenshots/diff.png) · [Mobile](docs/screenshots/mobile.png) ·
-[Commands](docs/screenshots/commands.png).
+[File diff](docs/screenshots/diff.png) · [Mobile](docs/screenshots/mobile.png).
 
 ## Structure and provenance
 
@@ -168,7 +166,7 @@ The imported, approved review images contain **synthetic conversations**:
 - `src/lib/api/codex.ts`: Codex records mapped to presentation types.
 - `src/lib/transcript.ts`: ordered grouping of consecutive activity.
 - `src/components/chat/`: messages, markdown, disclosures, lazy Pierre rendering.
-- `src/components/layout/`: sessions, toolbar controls, command palette.
+- `src/components/layout/`: sessions and toolbar controls.
 - `src/components/ui/`: shadcn / Base UI primitives; MessageScroller owns scrolling.
 - `src/index.css`: arthack web tokens, typography, responsive composition.
 

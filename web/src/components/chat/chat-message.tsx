@@ -28,7 +28,7 @@ export const ChatMessage = memo(function ChatMessage({
     <MessageRow align={isUser ? "end" : "start"}>
       <MessageContent>
         <MessageHeader>
-          <span className="message-author">{isUser ? "You" : "Codex"}</span>
+          <span className="message-author">{isUser ? "Human" : "Agent"}</span>
           <time
             dateTime={message.createdAt}
             title={new Date(message.createdAt).toLocaleString()}

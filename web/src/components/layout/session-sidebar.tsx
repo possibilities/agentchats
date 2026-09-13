@@ -1,5 +1,5 @@
 import { useDeferredValue, useState } from "react"
-import { SearchIcon, SlidersHorizontalIcon, XIcon } from "lucide-react"
+import { SearchIcon, XIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   InputGroup,
@@ -26,7 +26,6 @@ interface SessionSidebarProps {
   error: string | null
   onSelect: (id: string) => void
   onRefresh: () => void
-  onCommands: () => void
 }
 
 export function SessionSidebar({
@@ -36,7 +35,6 @@ export function SessionSidebar({
   error,
   onSelect,
   onRefresh,
-  onCommands,
 }: SessionSidebarProps) {
   const [query, setQuery] = useState("")
   const deferredQuery = useDeferredValue(query.trim().toLowerCase())
@@ -59,14 +57,6 @@ export function SessionSidebar({
               Sessions{" "}
               <span className="session-index__count">{sessions.length}</span>
             </h2>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label="Open commands"
-              onClick={onCommands}
-            >
-              <SlidersHorizontalIcon />
-            </Button>
           </div>
           <InputGroup>
             <InputGroupAddon>
@@ -112,7 +102,7 @@ export function SessionSidebar({
                 <li className="session-sidebar-state">
                   No local sessions yet.
                   <br />
-                  Start a conversation in Codex, run agentchats index, then refresh sessions.
+                  Start an Agent conversation, run agentchats index, then refresh sessions.
                   <Button variant="ghost" size="sm" onClick={onRefresh}>
                     Refresh sessions
                   </Button>
@@ -146,7 +136,7 @@ export function SessionSidebar({
                   >
                     <span className="session-row">
                       <span className="session-row__context">
-                        {session.workspace || "Codex"}
+                        {session.workspace || "Agent"}
                         <span>{formatRelativeTime(session.updatedAt)}</span>
                       </span>
                       <span className="session-row__title">
