@@ -112,7 +112,7 @@ export function SessionSidebar({
                 <li className="session-sidebar-state">
                   No local sessions yet.
                   <br />
-                  Start a conversation in Codex, then refresh the session index.
+                  Start a conversation in Codex, run agentchats index, then refresh sessions.
                   <Button variant="ghost" size="sm" onClick={onRefresh}>
                     Refresh sessions
                   </Button>

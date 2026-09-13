@@ -1,17 +1,15 @@
 import { expect, test } from "@playwright/test"
-import { mkdir } from "node:fs/promises"
 import { mockHistory } from "./fixtures"
 
 test("capture the real components with synthetic review content", async ({
   page,
-}) => {
+}, testInfo) => {
   const errors: string[] = []
   page.on("pageerror", (error) => errors.push(error.message))
   page.on("console", (message) => {
     if (message.type() === "error") errors.push(message.text())
   })
   await mockHistory(page)
-  await mkdir("docs/screenshots", { recursive: true })
   await page.goto("/")
   await expect(page.locator('[data-slot="message"]')).toHaveCount(4)
   await expect(
@@ -20,7 +18,7 @@ test("capture the real components with synthetic review content", async ({
   await page
     .locator('[data-slot="message-scroller-viewport"]')
     .evaluate((element) => element.scrollTo(0, 0))
-  await page.screenshot({ path: "docs/screenshots/messages.png" })
+  await page.screenshot({ path: testInfo.outputPath("messages.png") })
   await page
     .getByRole("button", { name: "Full transcript", exact: true })
     .click()
@@ -28,7 +26,7 @@ test("capture the real components with synthetic review content", async ({
   await page
     .locator('[data-slot="message-scroller-viewport"]')
     .evaluate((element) => element.scrollTo(0, 0))
-  await page.screenshot({ path: "docs/screenshots/full.png" })
+  await page.screenshot({ path: testInfo.outputPath("full.png") })
   await page.locator(".activity-group__trigger").click()
   await page.locator(".file-change-event .tool-disclosure__trigger").click()
   await page
@@ -43,7 +41,7 @@ test("capture the real components with synthetic review content", async ({
       .getByText("groupTranscript", { exact: false })
       .first(),
   ).toBeVisible()
-  await page.screenshot({ path: "docs/screenshots/diff.png" })
+  await page.screenshot({ path: testInfo.outputPath("diff.png") })
   await page.keyboard.press("Control+k")
   await page.getByRole("combobox").fill("collapse all")
   await page.getByRole("combobox").press("Enter")
@@ -51,9 +49,9 @@ test("capture the real components with synthetic review content", async ({
     .locator('[data-slot="message-scroller-viewport"]')
     .evaluate((element) => element.scrollTo(0, 0))
   await page.setViewportSize({ width: 390, height: 844 })
-  await page.screenshot({ path: "docs/screenshots/mobile.png" })
+  await page.screenshot({ path: testInfo.outputPath("mobile.png") })
   await page.keyboard.press("Control+k")
   await page.getByRole("combobox").fill("show")
-  await page.screenshot({ path: "docs/screenshots/commands.png" })
+  await page.screenshot({ path: testInfo.outputPath("commands.png") })
   expect(errors).toEqual([])
 })

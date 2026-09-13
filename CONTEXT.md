@@ -69,3 +69,10 @@ re-orienting in a project: workspace-scoped, budget-capped, markdown a model
 reads, silent when empty. The contract is shared across the `agent*` CLIs.
 _Avoid_: status (that's the index health probe, a distinct agentchats
 command).
+
+**web reader** — the local React/Vite conversation reader in `web/`, owned by
+agentchats and relocated from the approved Be Like Grok design. Initial scope
+is Codex: discovery through the shared session-index query layer, rich
+committed history and live polling through a Codex adapter. It follows the
+arthack web design, independently of the Signal Room TUI. _Avoid_: Be Like
+Grok service, agentchats serve (no such command is installed yet).

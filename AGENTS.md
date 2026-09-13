@@ -6,7 +6,7 @@ Read [CONTEXT.md](CONTEXT.md) for session/index terms and the
 ## What this repository is
 
 Agentchats makes the local coding-agent session history searchable. It owns
-the whole path from transcript to search result, and nothing else:
+the path from transcript to search result and conversation reader:
 
 - `src/parse/` — transcript parsers for Claude Code and Codex, normalizing
   each into a common message shape.
@@ -15,6 +15,8 @@ the whole path from transcript to search result, and nothing else:
 - `src/cli/` — the `agentchats` command surface: `index`, `status`,
   `search`, `sessions`, `view`, `expand`, `resume`, `state`, and `guide`, plus
   the in-process stdio MCP adapter.
+- `web/` — the local React/Vite conversation reader; agentchats session
+  discovery with a Codex committed-history adapter. See `web/README.md`.
 - `src/tui/` — the Signal Room resume picker (bun + OpenTUI) behind
   `agentchats search` with no `--json`.
 - `scripts/install.sh` — links the `agentchats` CLI into `~/.local/bin` and
@@ -24,8 +26,11 @@ the whole path from transcript to search result, and nothing else:
   teaches agents to wield `agentchats`. The `skills/<name>/` layout is the
   convention AgentStart's per-checkout skill scan discovers.
 
-Only Claude Code and Codex are in scope. This repository used to wrap a
-third-party tool, cass, that covered twenty-odd more agents plus semantic
+Only Claude Code and Codex are in scope for the index. The web reader currently
+supports Codex only; keep provider-specific reading in its adapter so a later
+Claude reader can use the same presentation components.
+
+This repository used to wrap a third-party tool, cass, that covered twenty-odd more agents plus semantic
 search, archive, and export; `docs/adr/0001-own-the-session-index.md`
 records why that was retired and what was deliberately given up.
 
@@ -106,6 +111,11 @@ synchronization path here.
   resume directive on enter and nothing on escape. The TUI follows the
   `fleet-tui-design` wiki contract (chromeless, ctrl+k palette, Signal
   Room tokens in `src/tui/theme.ts`).
+- `web/` changes: `bun run web:check` and `bun run web:test` (install with
+  `npm --prefix web ci`; Chromium with `cd web && npx playwright install chromium`).
+  Root `bun test` covers `test/`; the reader has separate Bun API tests and
+  Playwright browser specs. Retain the shipped arthack web design, documented
+  in `web/docs/arthack-aesthetic-brief.md`, rather than the TUI theme.
 - Installer changes: `./scripts/install.sh --check` here to see the plan,
   then `--install` to apply it, then AgentStart's convergence check
   (`~/code/agentstart/scripts/install.sh --install`).

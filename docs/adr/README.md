@@ -4,6 +4,9 @@
 index-ownership decision. Read it with [CONTEXT.md](../../CONTEXT.md) before
 changing native readers, indexing or query behavior.
 
+[0002: Own the web conversation reader](0002-own-the-web-conversation-reader.md)
+records the approved Be Like Grok relocation and its initial Codex read boundary.
+
 ## Withdrawn viewer experiment
 
 The earlier `0001-viewer-on-vendored-opencode-renderer.md` belonged to a

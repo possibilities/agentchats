@@ -1,7 +1,10 @@
 import { existsSync } from "node:fs"
 import { homedir } from "node:os"
 import path from "node:path"
-import { DatabaseSync } from "node:sqlite"
+import { Database } from "bun:sqlite"
+
+import { indexedCodexSessions } from "./session-index.ts"
+import type { Environ } from "../../src/store/paths.ts"
 
 import type { Connect } from "vite"
 
@@ -162,12 +165,13 @@ function sanitizeItem(itemType: string, value: unknown): unknown {
   return null
 }
 
-function codexHome() {
-  const configured = process.env.CODEX_HOME?.trim()
-  if (!configured) return path.join(homedir(), ".codex")
-  if (configured === "~") return homedir()
+function codexHome(env: Environ) {
+  const configured = env.CODEX_HOME?.trim()
+  const home = env.HOME || homedir()
+  if (!configured) return path.join(home, ".codex")
+  if (configured === "~") return home
   if (configured.startsWith("~/")) {
-    return path.join(homedir(), configured.slice(2))
+    return path.join(home, configured.slice(2))
   }
   return path.resolve(configured)
 }
@@ -177,27 +181,32 @@ function openReadOnly(databasePath: string) {
     throw new Error(`Codex database not found: ${databasePath}`)
   }
 
-  const database = new DatabaseSync(databasePath, { readOnly: true })
+  const database = new Database(databasePath, { readonly: true })
   database.exec("PRAGMA query_only = ON")
   return database
 }
 
 function withDatabases<T>(
-  callback: (state: DatabaseSync, history: DatabaseSync) => T,
+  env: Environ,
+  callback: (state: Database, history: Database) => T,
 ) {
-  const root = codexHome()
+  const root = codexHome(env)
   const state = openReadOnly(path.join(root, "state_5.sqlite"))
-  const history = openReadOnly(path.join(root, "thread_history_1.sqlite"))
-
   try {
-    return callback(state, history)
+    const history = openReadOnly(path.join(root, "thread_history_1.sqlite"))
+    try {
+      // Items and their cursor must observe one snapshot. A commit between
+      // those reads would otherwise advance past messages never delivered.
+      return history.transaction(() => callback(state, history))()
+    } finally {
+      history.close()
+    }
   } finally {
-    history.close()
     state.close()
   }
 }
 
-function latestStatus(history: DatabaseSync, threadId: string) {
+function latestStatus(history: Database, threadId: string) {
   const row = history
     .prepare(
       `SELECT status
@@ -211,7 +220,7 @@ function latestStatus(history: DatabaseSync, threadId: string) {
   return row?.status ?? null
 }
 
-function visibleItemCount(history: DatabaseSync, threadId: string) {
+function visibleItemCount(history: Database, threadId: string) {
   const placeholders = MESSAGE_ITEM_TYPES.map(() => "?").join(", ")
   const row = history
     .prepare(
@@ -226,7 +235,7 @@ function visibleItemCount(history: DatabaseSync, threadId: string) {
 
 function mapThread(
   row: StateThreadRow,
-  history: DatabaseSync,
+  history: Database,
 ): CodexThreadRecord {
   return {
     id: row.id,
@@ -263,7 +272,7 @@ function parseItem(row: ThreadItemRow): CodexThreadItemRecord | null {
 }
 
 function visibleItems(
-  history: DatabaseSync,
+  history: Database,
   threadId: string,
   detail: CodexTranscriptDetail,
   afterOrdinal?: number,
@@ -292,7 +301,7 @@ function visibleItems(
   })
 }
 
-function latestOrdinal(history: DatabaseSync, threadId: string) {
+function latestOrdinal(history: Database, threadId: string) {
   const row = history
     .prepare(
       `SELECT MAX(rollout_ordinal) AS latest_ordinal
@@ -304,7 +313,7 @@ function latestOrdinal(history: DatabaseSync, threadId: string) {
   return Number(row.latest_ordinal ?? -1)
 }
 
-function threadRow(state: DatabaseSync, threadId: string) {
+function threadRow(state: Database, threadId: string) {
   return state
     .prepare(
       `SELECT id, title, cwd, rollout_path, source, thread_source, model,
@@ -316,29 +325,25 @@ function threadRow(state: DatabaseSync, threadId: string) {
     .get(threadId) as StateThreadRow | undefined
 }
 
-function listThreads(limit: number): CodexThreadListResponse {
-  return withDatabases((state, history) => {
-    const rows = state
-      .prepare(
-        `SELECT id, title, cwd, rollout_path, source, thread_source, model,
-                git_branch, preview, updated_at_ms, updated_at, recency_at_ms,
-                has_user_event
-         FROM threads
-         WHERE archived = 0
-         ORDER BY COALESCE(recency_at_ms, updated_at_ms, 0) DESC
-         LIMIT ?`,
-      )
-      .all(limit) as unknown as StateThreadRow[]
-
-    return { threads: rows.map((row) => mapThread(row, history)) }
-  })
+function listThreads(limit: number, env: Environ): CodexThreadListResponse {
+  const indexed = indexedCodexSessions(limit, env)
+  if (indexed.length === 0) return { threads: [] }
+  return withDatabases(env, (state, history) => ({
+    // The index owns discovery and recency. Codex still supplies rich metadata
+    // and eligibility for its committed-history reader; it is not a second list.
+    threads: indexed.flatMap((session) => {
+      const row = threadRow(state, session.sessionId)
+      return row ? [mapThread(row, history)] : []
+    }),
+  }))
 }
 
 function getThread(
   threadId: string,
   detail: CodexTranscriptDetail,
+  env: Environ,
 ): CodexThreadDetailResponse | null {
-  return withDatabases((state, history) => {
+  return withDatabases(env, (state, history) => {
     const row = threadRow(state, threadId)
     if (!row) return null
 
@@ -357,8 +362,9 @@ function getItems(
   threadId: string,
   afterOrdinal: number,
   detail: CodexTranscriptDetail,
+  env: Environ,
 ): CodexThreadItemsResponse | null {
-  return withDatabases((state, history) => {
+  return withDatabases(env, (state, history) => {
     if (!threadRow(state, threadId)) return null
     return {
       items: visibleItems(history, threadId, detail, afterOrdinal),
@@ -379,19 +385,33 @@ function sendJson(
   response.end(JSON.stringify(body))
 }
 
-function parseBoundedInteger(value: string | null, fallback: number, maximum: number) {
-  const parsed = Number.parseInt(value ?? "", 10)
-  return Number.isFinite(parsed) ? Math.min(Math.max(parsed, 0), maximum) : fallback
+function parseBoundedInteger(value: string | null, fallback: number, maximum: number, minimum = 0) {
+  const parsed = value !== null && /^-?\d+$/.test(value) ? Number(value) : NaN
+  return Number.isSafeInteger(parsed) ? Math.min(Math.max(parsed, minimum), maximum) : fallback
 }
 
 function transcriptDetail(value: string | null): CodexTranscriptDetail {
   return value === "full" ? "full" : "messages"
 }
 
-export function codexApiMiddleware(): Connect.NextHandleFunction {
+export function readerApiMiddleware(env: Environ = process.env): Connect.NextHandleFunction {
   return (request, response, next) => {
-    if (request.method !== "GET" || !request.url?.startsWith("/api/threads")) {
+    if (!request.url?.startsWith("/api/threads")) {
       next()
+      return
+    }
+
+    // This is a local reader of private history, including in Vite preview.
+    const host = request.headers.host ?? ""
+    if (!/^(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/i.test(host) ||
+        (request.headers.origin && request.headers.origin !== `http://${host}`) ||
+        request.headers["sec-fetch-site"] === "cross-site") {
+      sendJson(response, 403, { error: "The reader API is available only from its local origin." })
+      return
+    }
+    if (request.method !== "GET") {
+      response.setHeader("Allow", "GET")
+      sendJson(response, 405, { error: "The reader API is read-only." })
       return
     }
 
@@ -401,7 +421,7 @@ export function codexApiMiddleware(): Connect.NextHandleFunction {
 
       if (url.pathname === "/api/threads") {
         const limit = parseBoundedInteger(url.searchParams.get("limit"), 50, 100)
-        sendJson(response, 200, listThreads(Math.max(limit, 1)))
+        sendJson(response, 200, listThreads(Math.max(limit, 1), env))
         return
       }
 
@@ -412,8 +432,9 @@ export function codexApiMiddleware(): Connect.NextHandleFunction {
           url.searchParams.get("after_ordinal"),
           -1,
           Number.MAX_SAFE_INTEGER,
+          -1,
         )
-        const result = getItems(threadId, afterOrdinal, detail)
+        const result = getItems(threadId, afterOrdinal, detail, env)
         sendJson(response, result ? 200 : 404, result ?? { error: "Thread not found" })
         return
       }
@@ -421,14 +442,14 @@ export function codexApiMiddleware(): Connect.NextHandleFunction {
       const threadMatch = url.pathname.match(/^\/api\/threads\/([^/]+)$/)
       if (threadMatch) {
         const threadId = decodeURIComponent(threadMatch[1])
-        const result = getThread(threadId, detail)
+        const result = getThread(threadId, detail, env)
         sendJson(response, result ? 200 : 404, result ?? { error: "Thread not found" })
         return
       }
 
       sendJson(response, 404, { error: "API route not found" })
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Codex API failed"
+      const message = error instanceof Error ? error.message : "Agentchats reader API failed"
       sendJson(response, 500, { error: message })
     }
   }

@@ -3,7 +3,7 @@
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo",
     "target": "es2023",
     "lib": ["ES2023"],
-    "types": ["node"],
+    "types": ["node", "bun"],
     "skipLibCheck": true,
 
     /* Bundler mode */
@@ -14,10 +14,11 @@
     "noEmit": true,
 
     /* Linting */
-    "noUnusedLocals": true,
+    // Shared store sources retain the root project's unused-local policy.
+    "noUnusedLocals": false,
     "noUnusedParameters": true,
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["vite.config.ts", "server/**/*.ts", "src/types/codex-db.ts"]
+  "include": ["vite.config.ts", "server/**/*.ts", "playwright.config.ts", "src/types/codex-db.ts"]
 }

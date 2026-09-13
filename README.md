@@ -7,7 +7,7 @@ under `~/.claude/projects` and Codex under `~/.codex/sessions`.
 Agentchats turns that scattered history into a searchable local index, and
 teaches agents to use it.
 
-Three pieces do that:
+Four pieces do that:
 
 - **The session index.** `src/parse/` turns each Claude Code and Codex
   transcript into a common message shape; `src/store/` writes it into a
@@ -20,6 +20,10 @@ Three pieces do that:
   `expand`, and `resume` are the query surface; bare `search` with no
   `--json` is the Signal Room resume picker (`src/tui/`, bun + OpenTUI).
   `agentchats mcp` serves the same typed producer handlers over stdio.
+- **The local conversation reader.** `web/` contains the React/Vite reader
+  relocated from the approved Be Like Grok design. It discovers Codex sessions
+  through the shared index query layer and reads rich committed history from
+  Codex. [Run and verify the reader](web/README.md).
 - **The `chats` skill.** `skills/chats/SKILL.md` is a runbook that teaches
   agents to use MCP through the directly connected MCP server: freshness, the search → view/expand → resume
   drill-down loop, query language, token budgeting, and recovery.
@@ -45,6 +49,30 @@ through the newly linked CLI. Index-building subprocesses are time-bounded
 (`scripts/run-with-timeout`) and reaped on timeout or installer termination,
 so a stuck rebuild cannot hang AgentStart or leave an orphaned process
 behind.
+
+## Run the conversation reader
+
+From this checkout, with Bun 1.3.14+ and Node 22.12+:
+
+```sh
+bun install --frozen-lockfile
+npm --prefix web ci
+./bin/agentchats index
+bun run web:dev
+```
+
+Open the loopback URL Vite prints. Messages / Full, expandable tools and diffs,
+and Watch live all use the shipped arthack web design. This initial reader is
+Codex-only; the index, CLI, and MCP continue to cover Claude Code too.
+
+`bun run web:check` checks reader lint, types, and the production build.
+After `cd web && npx playwright install chromium`, `bun run check` from the
+repository root verifies both trees, including API and browser tests. The CLI
+installer still needs only the root Bun dependencies; reader dependencies are
+installed separately for local development. There is no always-on service yet.
+
+See [the reader guide](web/README.md) for data sources and limitations, and
+[ADR 0002](docs/adr/0002-own-the-web-conversation-reader.md) for the boundary.
 
 ## MCP for agents
 
@@ -129,6 +157,7 @@ src/parse/                transcript parsers (Claude Code, Codex)
 src/store/                SQLite+FTS5 schema, ingest, and query
 src/cli/                  the agentchats command surface
 src/tui/                  the Signal Room resume picker
+web/                     React/Vite reader, local API, and browser tests
 scripts/install.sh        installer (AgentStart calls this)
 scripts/run-with-timeout  bounded subprocess runner used by the installer
 bin/agentchats            the agentchats CLI entry point, linked into ~/.local/bin
