@@ -1,4 +1,5 @@
-.chat-pane {
+.chat-pane,
+:scope.chat-pane {
   display: flex;
   flex-direction: column;
   flex: 1;

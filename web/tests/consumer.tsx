@@ -80,7 +80,7 @@ function Lane({ id, watch }: { id: string; watch: boolean }) {
   })
   return (
     <section
-      style={{ height: 500, display: "flex", minWidth: 0 }}
+      style={{ height: 500, display: "flex", flexDirection: "column", minWidth: 0 }}
       aria-label={`${id} lane`}
     >
       {error ? (

@@ -21,6 +21,8 @@ test("built package composes independent lanes, scopes CSS, follows idle updates
     .toBeLessThan(2)
   await expect(transcript.getByRole("button")).toHaveCount(0)
   await expect(transcript.locator("time")).toHaveCount(0)
+  expect(await transcript.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true)
+  expect(await transcript.evaluate((el) => el.clientHeight)).toBeLessThanOrEqual(500)
   await expect(page.locator("#host-marker")).toHaveCSS("color", "rgb(0, 0, 0)")
   await expect(page.locator("body")).toHaveCSS("margin", "8px")
   await expect(transcript.locator(".message-author").last()).toHaveCSS(
