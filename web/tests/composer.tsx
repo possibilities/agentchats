@@ -34,6 +34,7 @@ function Consumer() {
   const [props, setProps] = useState<{
     transcriptId: string
     active: boolean
+    reachable?: boolean
     pending: boolean
     stopping: boolean
     actionsDisabled: boolean

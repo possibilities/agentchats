@@ -447,3 +447,26 @@ test("optimistic recovery retains every failed submission beside a newer draft",
   expect(submissions).toHaveLength(2)
   expect(submissions[0].clientId).not.toBe(submissions[1].clientId)
 })
+
+
+test("explicit reachability decorates status without changing draft or action authority", async ({ page }) => {
+  await update(page, { reachable: true, alwaysShowSend: true, allowInterrupt: false })
+  const line = page.locator(".transcript-composer__activity-line")
+  const input = page.getByRole("textbox", { name: "Message Agent", exact: true })
+  await input.fill("Preserved fixture draft")
+  await expect(line).toHaveAccessibleName("Agent is ready")
+  const initial = await line.boundingBox()
+  const readyColor = await line.evaluate(el => getComputedStyle(el).backgroundColor)
+  expect(initial!.height).toBe(3)
+  await update(page, { active: true })
+  await expect(line).toHaveAccessibleName("Agent is working")
+  expect(await line.boundingBox()).toEqual(initial)
+  await update(page, { reachable: false })
+  await expect(line).toHaveAccessibleName("Agent is unavailable")
+  expect(await line.evaluate(el => getComputedStyle(el, "::after").animationName)).toBe("none")
+  expect(await line.evaluate(el => getComputedStyle(el).backgroundColor)).not.toBe(readyColor)
+  expect(await line.boundingBox()).toEqual(initial)
+  await expect(input).toHaveValue("Preserved fixture draft")
+  // Reachability is presentation only: the host independently owns action gating.
+  await expect(page.getByRole("button", { name: "Send", exact: true })).toBeEnabled()
+})

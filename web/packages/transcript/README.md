@@ -390,3 +390,10 @@ public entry points, their private chunks/declarations, and scoped CSS into
 `dist/`. Export maps exclude app and database internals. `bun run web:check` builds
 both app and package; `bun run web:test` includes source-contract tests and a
 browser consumer importing the built package without app styles.
+
+Hosts may pass `reachable` to `TranscriptComposer` for a three-pixel status
+divider: bright ready, dim unavailable, and indeterminate working. Reachability
+is independent of voice attachment and action pending state. Explicit false
+suppresses stale working activity; it does not change action or draft policy.
+Omitting the prop preserves the generic idle treatment. Status has accessible
+text, and reduced motion keeps working still with unchanged geometry.

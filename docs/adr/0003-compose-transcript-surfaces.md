@@ -77,3 +77,12 @@ every requested href and base pair.
 Agentvoice integration follows when its existing server protocol is connected
 through a source adapter. The consumer owns connection discovery and the
 “no agent voice server” state; this change does not build or start agentvoice.
+
+### Runtime status divider (2026-09-14)
+
+The composer accepts optional host-verified `reachable` state independently of
+activity and action disabling. Its fixed three-pixel divider shows ready in the
+accent, unavailable in the divider tone, and working with the existing bounded
+indeterminate segment. Unavailable overrides stale activity. Reduced motion
+remains still; accessible text identifies status without relying on color.
+The host retains all transport and action authority.

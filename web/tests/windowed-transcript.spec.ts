@@ -245,6 +245,8 @@ test("the first tiny upward wheel intent releases follow before later updates", 
   await expect(
     page.getByRole("button", { name: "Jump to latest", exact: true }),
   ).toBeVisible()
+  // Wait for the native key scroll, not only the synchronous intent chip.
+  await expect.poll(() => scroller.evaluate(bottomGap)).toBeGreaterThan(2)
   await scroller.hover()
   await page.mouse.wheel(0, 600)
   await expect(page.getByRole("button", { name: /Jump to latest/ })).toHaveCount(0)

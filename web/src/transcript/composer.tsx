@@ -64,6 +64,8 @@ export interface TranscriptComposerProps {
   transcriptId: string
   /** An agent turn is running. This does not disable entering follow-ups. */
   active?: boolean
+  /** Verified host runtime reachability, independent of voice attachment. Omit for legacy idle styling. */
+  reachable?: boolean
   /** A host request is awaiting acknowledgment, independently of agent activity. */
   pending?: boolean
   /** Keep true after interrupt acknowledgment until the terminal turn event. */
@@ -114,6 +116,7 @@ export function TranscriptComposer(props: TranscriptComposerProps) {
 
 function Composer({
   active = false,
+  reachable,
   pending = false,
   stopping = false,
   actionsDisabled = false,
@@ -500,6 +503,9 @@ function Composer({
     )
   }
 
+  const working = active && reachable !== false
+  const activityLabel = working ? "Agent is working" : reachable === true ? "Agent is ready" : reachable === false ? "Agent is unavailable" : undefined
+
   return (
     <div
       className={cn("agentchats-transcript transcript-composer", className)}
@@ -507,13 +513,14 @@ function Composer({
     >
       <div
         className="transcript-composer__activity-line"
-        data-active={active || undefined}
-        role={active ? "status" : undefined}
-        aria-label={active ? "Agent is working" : undefined}
+        data-active={working || undefined}
+        data-reachable={reachable}
+        role={activityLabel ? "status" : undefined}
+        aria-label={activityLabel}
       >
-        {active ? (
+        {activityLabel ? (
           <span className="transcript-composer__activity-label">
-            Agent is working
+            {activityLabel}
           </span>
         ) : null}
       </div>

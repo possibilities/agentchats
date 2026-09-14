@@ -742,10 +742,13 @@
   top: -1px;
   right: 0;
   left: 0;
-  height: 2px;
+  height: 3px;
   overflow: hidden;
   pointer-events: none;
   background: var(--transcript-composer-divider);
+}
+.transcript-composer__activity-line[data-reachable="true"]:not([data-active]) {
+  background: var(--transcript-composer-progress);
 }
 .transcript-composer__activity-line::after {
   position: absolute;

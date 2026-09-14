@@ -463,7 +463,7 @@ test("activity divider is full width, adds no height, and stays still for reduce
   })
   expect(geometry.lineWidth).toBe(geometry.rootWidth)
   expect(geometry.lineTop).toBe(geometry.rootTop - 1)
-  expect(geometry.height).toBe(2)
+  expect(geometry.height).toBe(3)
   expect(geometry.animationName).toBe("none")
   expect(geometry.segmentWidth).toBe(geometry.lineWidth)
   await expect(composer.locator(".transcript-composer__working")).toHaveCount(0)
