@@ -189,3 +189,65 @@ test("keeps following through late automatic row measurements", async ({ page })
   await expect(page.locator('[data-block-id="row-1999"]')).toBeVisible()
   await expect(page.getByRole("button", { name: /Jump to latest/ })).toHaveCount(0)
 })
+
+test("the first tiny upward wheel intent releases follow before later updates", async ({
+  page,
+}) => {
+  const scroller = page.locator(viewport)
+  await expect.poll(() => scroller.evaluate(bottomGap)).toBeLessThan(2)
+  await scroller.hover()
+
+  await scroller.dispatchEvent("wheel", { ctrlKey: true, deltaY: -1 })
+  await scroller.dispatchEvent("wheel", { deltaX: 1, deltaY: 0 })
+  await expect(page.getByRole("button", { name: /Jump to latest/ })).toHaveCount(0)
+
+  await page.mouse.wheel(0, -1)
+  await expect(
+    page.getByRole("button", { name: "Jump to latest", exact: true }),
+  ).toBeVisible()
+  for (let index = 0; index < 2; index++) {
+    await page.waitForTimeout(350)
+    await page.mouse.wheel(0, -1)
+  }
+  const anchor = await visibleRowAnchor(scroller)
+  expect(anchor).not.toBeNull()
+
+  // Outlast the short input-intent window, then combine an append with a
+  // streaming height revision. Reading state must remain durable.
+  await page.waitForTimeout(1_100)
+  await page.evaluate(() => {
+    const host = (window as any).windowedTranscript
+    host.append(1)
+    host.growLast()
+  })
+  await expect(
+    page.getByRole("button", {
+      name: "1 new message. Jump to latest",
+      exact: true,
+    }),
+  ).toBeVisible()
+  await expect.poll(async () => (await visibleRowAnchor(scroller))?.key).toBe(
+    anchor?.key,
+  )
+  await expect.poll(async () =>
+    Math.abs((await visibleRowAnchor(scroller))!.top - anchor!.top),
+  ).toBeLessThan(2)
+
+  await page
+    .getByRole("button", {
+      name: "1 new message. Jump to latest",
+      exact: true,
+    })
+    .click()
+  await expect.poll(() => scroller.evaluate(bottomGap)).toBeLessThan(2)
+  await scroller.focus()
+  await page.keyboard.press("ArrowUp")
+  await expect(
+    page.getByRole("button", { name: "Jump to latest", exact: true }),
+  ).toBeVisible()
+  await scroller.hover()
+  await page.mouse.wheel(0, 600)
+  await expect(page.getByRole("button", { name: /Jump to latest/ })).toHaveCount(0)
+  await page.evaluate(() => (window as any).windowedTranscript.append(1))
+  await expect.poll(() => scroller.evaluate(bottomGap)).toBeLessThan(2)
+})

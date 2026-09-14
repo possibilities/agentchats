@@ -56,11 +56,15 @@ lane; `viewportId` supplies a unique DOM anchor if needed. Constrain the parent'
 height so the transcript can scroll. Changing `transcriptId`, detail, or loading
 completion resets to the bottom. Idle and working transcripts behave identically.
 Within 64 pixels of the bottom, new messages and growing same-ID revisions stay
-at the end. Scrolling farther away preserves the reader's place and shows
+at the end. The first deliberate upward wheel, touch, or keyboard input releases
+following immediately, including a one-pixel move within that threshold.
+Scrolling away preserves the reader's place and shows
 **1 new message** / **N new messages**, counting newly added visible message IDs
 (including individual activities in Full). Revisions do not increase the count.
 The chip jumps to the end immediately, clears the count, and resumes follow;
-scrolling back to the bottom also clears it. Each transcript owns its count.
+scrolling back to the bottom with deliberate downward input also clears it. Layout
+and measurement scroll corrections do not change reading intent. Each transcript
+owns its count.
 `showJumpToLatest` defaults to true; set false only when the host supplies its own
 navigation. `follow={false}` disables automatic following while retaining the
 manual jump and unread count. Rendering a new array with stable IDs preserves

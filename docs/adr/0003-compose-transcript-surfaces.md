@@ -52,6 +52,15 @@ navigation, loading and recovery, and accessible focus behavior. External links
 retain ordinary anchor behavior. A host scope key closes the viewer without
 remounting descendant transcript or composer state.
 
+## Scroll intent amendment (2026-09-14)
+
+The windowed renderer treats the first deliberate upward wheel, touch, or
+keyboard event as the boundary between following and reading, even when the
+resulting movement remains within the 64-pixel end threshold. It records that
+intent before scroll, measurement, and stream-update callbacks can pin the view
+again. Only deliberate movement toward the end can resume threshold-based
+following; programmatic layout corrections do not impersonate reader intent.
+
 ## Consequences
 
 The package can be built, packed, and installed without exporting the application

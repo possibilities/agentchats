@@ -124,7 +124,9 @@ export function WindowedTranscript<T extends { id: string }>({
   const lastEndGapRef = useRef(0)
   const resizePinRef = useRef(false)
   const readingIntentUntilRef = useRef(0)
+  const towardEndIntentUntilRef = useRef(0)
   const pointerReadingRef = useRef(false)
+  const touchYRef = useRef<number | null>(null)
   const [away, setAway] = useState(false)
   const [unread, setUnread] = useState(0)
   const [initializing, setInitializing] = useState(true)
@@ -287,11 +289,62 @@ export function WindowedTranscript<T extends { id: string }>({
     [virtualizer],
   )
 
+  const releaseResizePin = useCallback(() => {
+    if (!resizePinRef.current) return
+    resizePinRef.current = false
+    if (scrollFrameRef.current != null) {
+      cancelAnimationFrame(scrollFrameRef.current)
+      scrollFrameRef.current = null
+    }
+  }, [])
+
+  const markReadingIntent = useCallback(() => {
+    readingIntentUntilRef.current = performance.now() + 1_000
+    releaseResizePin()
+  }, [releaseResizePin])
+
+  const disengageEndFollow = useCallback(() => {
+    markReadingIntent()
+    towardEndIntentUntilRef.current = 0
+    if (initializingRef.current) return
+    if (scrollFrameRef.current != null) {
+      cancelAnimationFrame(scrollFrameRef.current)
+      scrollFrameRef.current = null
+    }
+    if (restoreFrameRef.current != null) {
+      cancelAnimationFrame(restoreFrameRef.current)
+      restoreFrameRef.current = null
+    }
+    restoringAnchorRef.current = false
+    stickToEndRef.current = false
+    awayRef.current = true
+    setAway(true)
+    const element = viewportRef.current
+    if (element) {
+      anchorRef.current = captureReadingAnchor(element)
+      queueAnchorCapture()
+    }
+  }, [markReadingIntent, queueAnchorCapture])
+
+  const markTowardEndIntent = useCallback(() => {
+    markReadingIntent()
+    towardEndIntentUntilRef.current = performance.now() + 1_000
+  }, [markReadingIntent])
+
   const updateEdge = useCallback(() => {
     const element = viewportRef.current
     if (!element || restoringAnchorRef.current) return
     const gap = distanceFromEnd(element)
     const height = element.clientHeight
+    const previousOffset = lastScrollOffsetRef.current
+    const readingIntent =
+      pointerReadingRef.current || performance.now() <= readingIntentUntilRef.current
+    const movedUp =
+      element.scrollTop < previousOffset && pointerReadingRef.current
+    const movedTowardEnd =
+      element.scrollTop > previousOffset &&
+      (pointerReadingRef.current ||
+        performance.now() <= towardEndIntentUntilRef.current)
     const resizedWhilePinned =
       lastViewportHeightRef.current > 0 &&
       height !== lastViewportHeightRef.current &&
@@ -312,9 +365,13 @@ export function WindowedTranscript<T extends { id: string }>({
     lastEndGapRef.current = gap
     lastScrollOffsetRef.current = element.scrollTop
     if (resizePinRef.current) return
-    const nextAway = gap > END_THRESHOLD
-    const readingIntent =
-      pointerReadingRef.current || performance.now() <= readingIntentUntilRef.current
+    const nextAway =
+      gap > END_THRESHOLD ||
+      movedUp ||
+      (awayRef.current &&
+        !stickToEndRef.current &&
+        !(movedTowardEnd && gap <= END_THRESHOLD))
+    if (movedUp) stickToEndRef.current = false
     if (
       nextAway &&
       stickToEndRef.current &&
@@ -341,23 +398,10 @@ export function WindowedTranscript<T extends { id: string }>({
       setUnread(0)
       stickToEndRef.current = followRef.current
       readingIntentUntilRef.current = 0
+      towardEndIntentUntilRef.current = 0
       anchorRef.current = null
     }
   }, [queueAnchorCapture, queueScrollToEnd, virtualizer])
-
-  const releaseResizePin = useCallback(() => {
-    if (!resizePinRef.current) return
-    resizePinRef.current = false
-    if (scrollFrameRef.current != null) {
-      cancelAnimationFrame(scrollFrameRef.current)
-      scrollFrameRef.current = null
-    }
-  }, [])
-
-  const markReadingIntent = useCallback(() => {
-    readingIntentUntilRef.current = performance.now() + 1_000
-    releaseResizePin()
-  }, [releaseResizePin])
 
   const handleScroll = useCallback(
     (_event: UIEvent<HTMLDivElement>) => updateEdge(),
@@ -550,6 +594,7 @@ export function WindowedTranscript<T extends { id: string }>({
   const jumpToLatest = useCallback(() => {
     stickToEndRef.current = true
     readingIntentUntilRef.current = 0
+    towardEndIntentUntilRef.current = 0
     awayRef.current = false
     setAway(false)
     setUnread(0)
@@ -590,10 +635,45 @@ export function WindowedTranscript<T extends { id: string }>({
         aria-label={label}
         onScroll={handleScroll}
         onWheel={(event) => {
-          if (event.deltaY < 0 || awayRef.current) markReadingIntent()
+          if (event.ctrlKey) return
+          if (event.deltaY < 0) disengageEndFollow()
+          else if (event.deltaY > 0 && awayRef.current) markTowardEndIntent()
         }}
-        onTouchStart={markReadingIntent}
-        onTouchMove={markReadingIntent}
+        onTouchStart={(event) => {
+          touchYRef.current =
+            event.touches.length === 1 ? event.touches[0]?.clientY ?? null : null
+          if (touchYRef.current == null) return
+          markReadingIntent()
+        }}
+        onTouchMove={(event) => {
+          if (event.touches.length !== 1) {
+            touchYRef.current = null
+            return
+          }
+          const nextY = event.touches[0]?.clientY ?? null
+          if (
+            nextY != null &&
+            touchYRef.current != null &&
+            nextY > touchYRef.current
+          ) {
+            disengageEndFollow()
+          } else if (
+            nextY != null &&
+            touchYRef.current != null &&
+            nextY < touchYRef.current
+          ) {
+            markTowardEndIntent()
+          } else {
+            markReadingIntent()
+          }
+          touchYRef.current = nextY
+        }}
+        onTouchEnd={() => {
+          touchYRef.current = null
+        }}
+        onTouchCancel={() => {
+          touchYRef.current = null
+        }}
         onPointerDown={(event) => {
           if (event.target === event.currentTarget) {
             pointerReadingRef.current = true
@@ -610,16 +690,23 @@ export function WindowedTranscript<T extends { id: string }>({
           pointerReadingRef.current = false
         }}
         onKeyDown={(event) => {
-          if (
-            event.key === "Tab" ||
-            (event.target === event.currentTarget &&
-              (event.key === "ArrowUp" ||
-                event.key === "PageUp" ||
-                event.key === "Home" ||
-                (event.key === " " && event.shiftKey)))
-          ) {
-            markReadingIntent()
-          }
+          if (event.key === "Tab") markReadingIntent()
+          else if (
+            event.target === event.currentTarget &&
+            (event.key === "ArrowUp" ||
+              event.key === "PageUp" ||
+              event.key === "Home" ||
+              (event.key === " " && event.shiftKey))
+          )
+            disengageEndFollow()
+          else if (
+            event.target === event.currentTarget &&
+            (event.key === "ArrowDown" ||
+              event.key === "PageDown" ||
+              event.key === "End" ||
+              event.key === " ")
+          )
+            markTowardEndIntent()
         }}
         style={{
           width: "100%",
