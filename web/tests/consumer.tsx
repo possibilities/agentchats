@@ -106,9 +106,10 @@ function DirectConsumer() {
   const [detail, setDetail] = useState<"messages" | "full">("messages")
   const [loading, setLoading] = useState(false)
   const [follow, setFollow] = useState(true)
+  const [windowed, setWindowed] = useState(false)
   Object.assign(window, {
     directTranscript: {
-      setMessages, setId, setDetail, setLoading, setFollow,
+      setMessages, setId, setDetail, setLoading, setFollow, setWindowed,
       setCodexMessages: (messages: TranscriptMessage[]) => setMessages(messages.map((message) => ({
         ...message, presentation: parseCodexMessagePresentation(message.content),
       }))),
@@ -122,6 +123,7 @@ function DirectConsumer() {
         detail={detail}
         loading={loading}
         follow={follow}
+        windowed={windowed}
         aria-label="Direct transcript"
       />
     </div>

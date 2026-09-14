@@ -53,8 +53,10 @@ try {
     `
 import { groupTranscript, mergeTranscript, type TranscriptMessage, type TranscriptMessagePresentation, type TranscriptSource } from '@agentchats/transcript'
 import { Transcript, TranscriptBlock, TranscriptComposer, type TranscriptQueuedMessage, useTranscript } from '@agentchats/transcript/react'
-import { createCodexTranscriptSource, parseCodexMessagePresentation } from '@agentchats/transcript/codex'
+import { createCodexTranscriptSource, mapCodexSubagentActivity, parseCodexMessagePresentation } from '@agentchats/transcript/codex'
 const presentation: TranscriptMessagePresentation | undefined = parseCodexMessagePresentation('<realtime_delegation><input>Hello</input></realtime_delegation>')
+const subagent = mapCodexSubagentActivity({ id: 'activity', kind: 'started', agentThreadId: 'thread', agentPath: '/root/worker' })
+if (subagent?.activity.detail !== '/root/worker') throw new Error('Missing Codex subagent presentation')
 const messages: TranscriptMessage[] = [{ id: 'one', role: 'user', content: 'Hello', status: 'complete', presentation }]
 const source: TranscriptSource = createCodexTranscriptSource()
 const queue: TranscriptQueuedMessage[] = [{ id: 'q', text: 'Next', pausedReason: 'Stopped', canResume: true }]

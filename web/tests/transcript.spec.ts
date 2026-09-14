@@ -1,9 +1,30 @@
 import { expect, test } from "@playwright/test"
 import { groupTranscript } from "../src/lib/transcript"
+import { mapCodexSubagentActivity } from "../src/transcript/codex"
 import type { Message } from "../src/types/message"
 import { item, mockHistory } from "./fixtures"
 
 const viewport = '[data-slot="message-scroller-viewport"]'
+
+function subagentMessage(
+  id: string,
+  kind: string,
+  agentPath: string,
+): Message {
+  const mapped = mapCodexSubagentActivity({
+    id,
+    kind,
+    agentThreadId: `thread-${id}`,
+    agentPath,
+  })!
+  return {
+    id,
+    role: "tool",
+    content: mapped.content,
+    status: "complete",
+    toolActivity: mapped.activity,
+  }
+}
 
 test("grouping preserves message boundaries and stable live group ids", () => {
   const message = (id: string, role: Message["role"]): Message => ({
@@ -137,6 +158,102 @@ test("a closed earlier tool cannot hide a later expanded tool when they regroup"
   await expect(
     page.locator(".tool-disclosure__trigger", { hasText: "second command" }),
   ).toHaveAttribute("aria-expanded", "true")
+})
+
+test("windowed subagent lifecycle groups keep every detail reachable through polling", async ({
+  page,
+}) => {
+  await page.goto("/tests/consumer.html?direct")
+  const singleton = subagentMessage(
+    "interaction",
+    "interacted",
+    "/root/android_disconnected_layout",
+  )
+  const separator: Message = {
+    id: "agent-separator",
+    role: "assistant",
+    content: "The requested child work is continuing.",
+    status: "complete",
+  }
+  const started = subagentMessage("spawn", "started", "/root/layout_worker")
+  const completed = subagentMessage(
+    "completion",
+    "completed",
+    "/root/layout_worker",
+  )
+  await page.evaluate((messages) => {
+    const host = (window as any).directTranscript
+    host.setWindowed(true)
+    host.setDetail("full")
+    host.setMessages(messages)
+  }, [singleton, separator, started, completed])
+
+  const scroller = page.locator(viewport)
+  const singletonTrigger = page.locator(".tool-disclosure__trigger", {
+    hasText: "/root/android_disconnected_layout",
+  })
+  await singletonTrigger.click()
+  await expect(
+    page.getByLabel("Agent thread", { exact: true }).filter({ hasText: "thread-interaction" }),
+  ).toBeVisible()
+
+  const group = page.locator(".activity-group__trigger")
+  await expect(group).toContainText("2 subagent activities")
+  await group.click()
+  await expect(group).toHaveAttribute("aria-expanded", "true")
+  const children = page.locator(".activity-group__items .tool-disclosure")
+  await expect(children).toHaveCount(2)
+
+  const startedTrigger = children.nth(0).locator(".tool-disclosure__trigger")
+  const completedTrigger = children.nth(1).locator(".tool-disclosure__trigger")
+  await startedTrigger.scrollIntoViewIfNeeded()
+  await expect(startedTrigger).toBeVisible()
+  await startedTrigger.click()
+  const startedBody = children.nth(0).getByLabel("Activity", { exact: true })
+  await startedBody.scrollIntoViewIfNeeded()
+  await expect(startedBody).toHaveText("Started")
+  expect(await startedBody.evaluate((element, selector) => {
+    const viewport = document.querySelector(selector)!.getBoundingClientRect()
+    const body = element.getBoundingClientRect()
+    return body.top >= viewport.top && body.bottom <= viewport.bottom
+  }, viewport)).toBe(true)
+  await completedTrigger.scrollIntoViewIfNeeded()
+  await expect(completedTrigger).toBeVisible()
+  await completedTrigger.focus()
+  await completedTrigger.press("Enter")
+  const completedBody = children.nth(1).getByLabel("Activity", { exact: true })
+  await completedBody.scrollIntoViewIfNeeded()
+  await expect(completedBody).toHaveText("Completed")
+  expect(await completedBody.evaluate((element, selector) => {
+    const viewport = document.querySelector(selector)!.getBoundingClientRect()
+    const body = element.getBoundingClientRect()
+    return body.top >= viewport.top && body.bottom <= viewport.bottom
+  }, viewport)).toBe(true)
+  expect(await scroller.evaluate((element) => element.scrollTop > 0)).toBe(true)
+
+  const followup = subagentMessage("followup", "interacted", "/root/reviewer")
+  await page.evaluate((messages) => {
+    ;(window as any).directTranscript.setMessages(messages)
+  }, [
+    { ...singleton },
+    separator,
+    { ...started },
+    { ...completed },
+    followup,
+  ])
+  await expect(group).toHaveAttribute("aria-expanded", "true")
+  await expect(page.locator(".activity-group__items .tool-disclosure")).toHaveCount(3)
+  await expect(
+    page.locator(".tool-disclosure__trigger", { hasText: "Started" }),
+  ).toHaveAttribute("aria-expanded", "true")
+  await expect(
+    page.locator(".tool-disclosure__trigger", { hasText: "Completed" }),
+  ).toHaveAttribute("aria-expanded", "true")
+  const followupTrigger = page.locator(".tool-disclosure__trigger", {
+    hasText: "/root/reviewer",
+  })
+  await followupTrigger.scrollIntoViewIfNeeded()
+  await expect(followupTrigger).toBeVisible()
 })
 
 test("Human delivery status is announced without changing the source body", async ({

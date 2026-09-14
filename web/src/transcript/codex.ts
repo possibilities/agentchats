@@ -7,6 +7,10 @@ import type { TranscriptSource } from "./types"
 
 export type { CodexTransportOptions } from "../lib/api/codex"
 export { parseCodexMessagePresentation } from "../lib/api/codex-presentation"
+export {
+  mapCodexSubagentActivity,
+  type CodexSubagentActivityPresentation,
+} from "../lib/api/codex-subagent-activity"
 
 /** Map the existing reader HTTP API to portable transcript data. No database access. */
 export function createCodexTranscriptSource(

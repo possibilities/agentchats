@@ -1,5 +1,6 @@
 import { transcriptTitle } from "../transcript-title"
 import { parseCodexMessagePresentation } from "./codex-presentation"
+import { mapCodexSubagentActivity } from "./codex-subagent-activity"
 import type {
   CodexApiError,
   CodexThreadDetailResponse,
@@ -232,6 +233,9 @@ export function mapCodexItem(record: CodexThreadItemRecord): Message | null {
   if (record.itemType === "fileChange") mapped = fileActivity(record.item)
   if (record.itemType === "mcpToolCall") mapped = mcpActivity(record.item)
   if (record.itemType === "webSearch") mapped = searchActivity(record.item)
+  if (record.itemType === "subAgentActivity") {
+    mapped = mapCodexSubagentActivity(record.item)
+  }
   if (!mapped) return null
 
   return {

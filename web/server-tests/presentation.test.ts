@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test"
 import { parseCodexMessagePresentation } from "../src/transcript/codex"
+import { mapCodexSubagentActivity } from "../src/transcript/codex"
 import { mapCodexItem } from "../src/lib/api/codex"
 
 const envelope = (input: string, transcript?: string, source?: string) =>
@@ -99,5 +100,51 @@ test("the reader adapter adds presentation metadata without mutating raw content
     content,
     status: "complete",
     presentation: { title: "Via Voice", body: "Copy this" },
+  })
+})
+
+test("subagent lifecycle records expose path, action, and stable source details", () => {
+  const item = {
+    id: "call_GR4cGfSXKZr1ubNdikZLQ9uM",
+    kind: "interacted",
+    agentThreadId: "01a0a060-8b15-7211-b62c-26e9bc56d447",
+    agentPath: "/root/android_disconnected_layout",
+  }
+  const before = JSON.stringify(item)
+  expect(mapCodexSubagentActivity(item)).toEqual({
+    content: "Interacted /root/android_disconnected_layout",
+    activity: {
+      name: "Subagent",
+      detail: "/root/android_disconnected_layout",
+      meta: "Interacted",
+      state: "complete",
+      sections: [
+        { label: "Activity", content: "Interacted" },
+        { label: "Agent path", content: "/root/android_disconnected_layout" },
+        { label: "Agent thread", content: "01a0a060-8b15-7211-b62c-26e9bc56d447" },
+        { label: "Activity ID", content: "call_GR4cGfSXKZr1ubNdikZLQ9uM" },
+        { label: "Original record", content: JSON.stringify(item, null, 2) },
+      ],
+    },
+  })
+  expect(JSON.stringify(item)).toBe(before)
+
+  expect(mapCodexItem({
+    threadId: "one",
+    turnId: "turn",
+    itemId: item.id,
+    rolloutOrdinal: 2,
+    createdAtMs: 0,
+    itemType: "subAgentActivity",
+    item,
+  })).toMatchObject({
+    id: `turn:${item.id}`,
+    role: "tool",
+    content: "Interacted /root/android_disconnected_layout",
+    toolActivity: {
+      name: "Subagent",
+      detail: "/root/android_disconnected_layout",
+      meta: "Interacted",
+    },
   })
 })

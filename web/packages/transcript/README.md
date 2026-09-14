@@ -12,7 +12,7 @@ ships no app shell, session picker, command UI, database reader, or server proce
 | --- | --- |
 | `@agentchats/transcript` | `TranscriptMessage`, `TranscriptBlock`, snapshot/update/source types, `groupTranscript`, `activitySummary`, `mergeTranscript` |
 | `@agentchats/transcript/react` | `Transcript`, `TranscriptBlock`, `TranscriptComposer`, `useTranscript` and their props/state types |
-| `@agentchats/transcript/codex` | `createCodexTranscriptSource`, `parseCodexMessagePresentation`, `CodexTransportOptions` |
+| `@agentchats/transcript/codex` | `createCodexTranscriptSource`, `parseCodexMessagePresentation`, `mapCodexSubagentActivity`, `CodexTransportOptions` |
 | `@agentchats/transcript/styles.css` | Optional compiled arthack styles; no consumer Tailwind setup needed |
 
 The data entry has no React, browser, provider, or storage dependency. The React
@@ -23,7 +23,7 @@ it (for example, `import '@fontsource-variable/geist-mono'`). Otherwise the syst
 monospace stack is used. The stylesheet does not download fonts or restyle the host.
 Pierre loads only when a file diff opens. Raw HTML in Markdown is not rendered.
 
-The 0.3.6 presentation puts Human input and Agent replies on the same left edge,
+The 0.3.7 presentation puts Human input and Agent replies on the same left edge,
 using a flat inset for Human input and open space for replies. Reading text is
 18px with 28px leading, message gaps are 24px (20px in narrow lanes), and prose
 is capped at 80ch.
@@ -129,6 +129,12 @@ Those messages retain normal rendering. Parsing belongs in the provider adapter;
 the React components only consume presentation metadata. See
 [the presentation decision](../../../docs/adr/0005-structured-transcript-presentation.md)
 for source evidence and fallback boundaries.
+
+Codex `subAgentActivity` records can use `mapCodexSubagentActivity`. It retains
+each lifecycle record as a separate activity while presenting the agent path and
+action in the collapsed row, with the path, thread, action, event ID, and original
+record available in its disclosure. This keeps separate lifecycle events readable
+when a host groups consecutive activity.
 
 ## Agent composer
 

@@ -114,18 +114,25 @@ test("deep links and follow read Codex before a session has been indexed", async
   item(1, "reasoning", { text: "Hidden" })
   item(2, "commandExecution", { command: "pwd", aggregatedOutput: "x".repeat(50_000), status: "completed" })
   item(3, "fileChange", { changes: [{ path: "app.ts", kind: { type: "update" }, diff: "x".repeat(200_001) }] })
+  item(4, "subAgentActivity", { id: "spawn", kind: "started", agentThreadId: "child-thread", agentPath: "/root/child" })
   history.query("INSERT INTO thread_turns VALUES ('indexed', 0, 'completed')").run()
   const before = files.map((file) => readFileSync(file))
   const messages = await get("/api/threads/indexed?detail=messages")
   expect(messages.response.status).toBe(200)
   expect(messages.body.items.map((record: any) => record.rolloutOrdinal)).toEqual([0])
-  expect(messages.body.latestOrdinal).toBe(3)
+  expect(messages.body.latestOrdinal).toBe(4)
   expect(messages.body.turnStatus).toBe("completed")
   const full = (await get("/api/threads/indexed?detail=full")).body
-  expect(full.items.map((record: any) => record.itemType)).toEqual(["userMessage", "commandExecution", "fileChange"])
+  expect(full.items.map((record: any) => record.itemType)).toEqual(["userMessage", "commandExecution", "fileChange", "subAgentActivity"])
   expect(full.items[1].item.output).toBe("x".repeat(50_000))
   expect(full.items[2].item.changes[0].diff).toBe("x".repeat(200_001))
   expect(full.items[2].item.changes[0].diffTruncated).toBe(false)
+  expect(full.items[3].item).toEqual({
+    id: "spawn",
+    kind: "started",
+    agentThreadId: "child-thread",
+    agentPath: "/root/child",
+  })
   expect(files.map((file) => readFileSync(file))).toEqual(before)
   expect((await get("/api/threads/indexed/items?after_ordinal=-1")).body.items).toHaveLength(1)
   item(4, "agentMessage", { text: "New committed reply" })

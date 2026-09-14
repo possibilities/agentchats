@@ -13,6 +13,15 @@ import {
 } from "@/transcript/disclosure-state"
 import type { Message } from "@/types/message"
 
+function activityKindLabel(name: string, count: number) {
+  if (name === "Command") return count === 1 ? "command" : "commands"
+  if (name === "MCP") return count === 1 ? "lookup" : "lookups"
+  if (name === "Files") return count === 1 ? "change set" : "change sets"
+  if (name === "Subagent")
+    return count === 1 ? "subagent activity" : "subagent activities"
+  return name.toLowerCase()
+}
+
 export const ActivityGroup = memo(function ActivityGroup({
   messages,
 }: {
@@ -53,10 +62,7 @@ export const ActivityGroup = memo(function ActivityGroup({
         </span>
         <span className="activity-group__summary">
           {kinds
-            .map(
-              ([name, count]) =>
-                `${count} ${name === "Command" ? (count === 1 ? "command" : "commands") : name === "MCP" ? (count === 1 ? "lookup" : "lookups") : name === "Files" ? (count === 1 ? "change set" : "change sets") : name.toLowerCase()}`,
-            )
+            .map(([name, count]) => `${count} ${activityKindLabel(name, count)}`)
             .join(" · ")}
         </span>
         {errors > 0 ? (

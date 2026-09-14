@@ -26,6 +26,7 @@ const FULL_ITEM_TYPES = [
   "fileChange",
   "mcpToolCall",
   "webSearch",
+  "subAgentActivity",
 ] as const
 
 interface StateThreadRow {
@@ -152,6 +153,15 @@ function sanitizeItem(itemType: string, value: unknown): unknown {
       resultCount: Array.isArray(value.results) ? value.results.length : 0,
       actionText: jsonText(value.action),
       resultsText: jsonText(value.results),
+    }
+  }
+
+  if (itemType === "subAgentActivity") {
+    return {
+      id: textValue(value.id),
+      kind: textValue(value.kind),
+      agentThreadId: textValue(value.agentThreadId),
+      agentPath: textValue(value.agentPath),
     }
   }
 
