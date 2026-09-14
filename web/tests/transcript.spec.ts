@@ -33,6 +33,167 @@ test("grouping preserves message boundaries and stable live group ids", () => {
   expect(source).toHaveLength(5)
 })
 
+test("message-keyed disclosures survive singleton grouping and prepends, then reset by transcript", async ({
+  page,
+}) => {
+  await page.goto("/tests/consumer.html?direct")
+  const tool = (id: string, detail: string): Message => ({
+    id,
+    role: "tool",
+    content: detail,
+    status: "complete",
+    toolActivity: {
+      name: "Command",
+      detail,
+      state: "complete",
+      sections: [{ label: "Command", content: detail }],
+    },
+  })
+  await page.evaluate((messages) => {
+    const host = (window as any).directTranscript
+    host.setDetail("full")
+    host.setMessages(messages)
+  }, [tool("stable", "original command")])
+  const stable = page.locator(".tool-disclosure__trigger", {
+    hasText: "original command",
+  })
+  await stable.click()
+  await expect(stable).toHaveAttribute("aria-expanded", "true")
+
+  await page.evaluate((messages) => {
+    ;(window as any).directTranscript.setMessages(messages)
+  }, [tool("stable", "streamed command"), tool("appended", "appended command")])
+  const group = page.locator(".activity-group__trigger")
+  await expect(group).toHaveAttribute("aria-expanded", "true")
+  const streamed = page.locator(".tool-disclosure__trigger", {
+    hasText: "streamed command",
+  })
+  await expect(streamed).toHaveAttribute("aria-expanded", "true")
+
+  await page.evaluate((messages) => {
+    ;(window as any).directTranscript.setMessages(messages)
+  }, [
+    tool("prepended", "prepended command"),
+    tool("stable", "polled command"),
+    tool("appended", "appended command"),
+  ])
+  await expect(group).toHaveAttribute("aria-expanded", "true")
+  await expect(
+    page.locator(".tool-disclosure__trigger", { hasText: "polled command" }),
+  ).toHaveAttribute("aria-expanded", "true")
+
+  await page.evaluate(() => {
+    ;(window as any).directTranscript.setId("another-transcript")
+  })
+  await expect(group).toHaveAttribute("aria-expanded", "false")
+})
+
+test("a closed earlier tool cannot hide a later expanded tool when they regroup", async ({
+  page,
+}) => {
+  await page.goto("/tests/consumer.html?direct")
+  const tool = (id: string, detail: string): Message => ({
+    id,
+    role: "tool",
+    content: detail,
+    status: "complete",
+    toolActivity: {
+      name: "Command",
+      detail,
+      state: "complete",
+      sections: [{ label: "Command", content: detail }],
+    },
+  })
+  const first = tool("closed-first", "first command")
+  const second = tool("open-second", "second command")
+  await page.evaluate((messages) => {
+    const host = (window as any).directTranscript
+    host.setDetail("full")
+    host.setMessages(messages)
+  }, [first])
+  const firstTrigger = page.locator(".tool-disclosure__trigger", {
+    hasText: "first command",
+  })
+  await firstTrigger.click()
+  await firstTrigger.click()
+  await expect(firstTrigger).toHaveAttribute("aria-expanded", "false")
+
+  await page.evaluate((messages) => {
+    ;(window as any).directTranscript.setMessages(messages)
+  }, [second])
+  const secondTrigger = page.locator(".tool-disclosure__trigger", {
+    hasText: "second command",
+  })
+  await secondTrigger.click()
+  await expect(secondTrigger).toHaveAttribute("aria-expanded", "true")
+
+  await page.evaluate((messages) => {
+    ;(window as any).directTranscript.setMessages(messages)
+  }, [first, second])
+  await expect(page.locator(".activity-group__trigger")).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  )
+  await expect(
+    page.locator(".tool-disclosure__trigger", { hasText: "second command" }),
+  ).toHaveAttribute("aria-expanded", "true")
+})
+
+test("Human delivery status is announced without changing the source body", async ({
+  page,
+}) => {
+  await page.goto("/tests/consumer.html?direct")
+  await page.evaluate(() => {
+    ;(window as any).directTranscript.setMessages([
+      {
+        id: "optimistic-human",
+        role: "user",
+        content: "Keep this source text exact.",
+        status: "complete",
+        deliveryStatus: "Accepted · waiting for transcript",
+      },
+    ])
+  })
+  await expect(page.getByRole("status")).toHaveText(
+    "Accepted · waiting for transcript",
+  )
+  await expect(page.getByText("Keep this source text exact.")).toBeVisible()
+})
+
+test("unread count detects a new message ID when the visible count is unchanged", async ({
+  page,
+}) => {
+  await page.goto("/tests/consumer.html?direct")
+  const messages = Array.from({ length: 40 }, (_, index): Message => ({
+    id: `message-${index}`,
+    role: "assistant",
+    content: `Message ${index}. ${"Readable history. ".repeat(20)}`,
+    status: "complete",
+  }))
+  await page.evaluate((items) => {
+    ;(window as any).directTranscript.setMessages(items)
+  }, messages)
+  const scroller = page.locator(viewport)
+  await expect(page.locator('[data-slot="message"]')).toHaveCount(40)
+  await scroller.hover()
+  await page.mouse.wheel(0, -5_000)
+  await expect(page.getByRole("button", { name: "Jump to latest" })).toBeVisible()
+  messages[messages.length - 1] = {
+    ...messages[messages.length - 1],
+    id: "replacement-message",
+    content: "A new message replaced unavailable history.",
+  }
+  await page.evaluate((items) => {
+    ;(window as any).directTranscript.setMessages(items)
+  }, messages)
+  await expect(
+    page.getByRole("button", {
+      name: "1 new message. Jump to latest",
+      exact: true,
+    }),
+  ).toBeVisible()
+})
+
 test("Messages contains only conversation; Full collapses 100 activities and per-file Pierre diffs", async ({
   page,
 }) => {

@@ -1,0 +1,678 @@
+"use client"
+
+import { useVirtualizer, type Virtualizer } from "@tanstack/react-virtual"
+import { ArrowDownIcon } from "lucide-react"
+import {
+  useCallback,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+  type UIEvent,
+} from "react"
+import { Button } from "../components/ui/button"
+
+const END_THRESHOLD = 64
+
+type WindowedRow<T> =
+  | { key: "slot:header"; kind: "slot"; content: ReactNode }
+  | { key: "slot:empty"; kind: "slot"; content: ReactNode }
+  | { key: `block:${string}`; kind: "block"; block: T }
+  | { key: "slot:footer"; kind: "slot"; content: ReactNode }
+
+interface ReadingAnchor {
+  key: string
+  offset: number
+}
+
+export interface WindowedTranscriptProps<T extends { id: string }> {
+  blocks: readonly T[]
+  /** Exact visible message IDs, including messages grouped into one block. */
+  messageIds: readonly string[]
+  renderBlock: (block: T) => ReactNode
+  /** Follow the bottom until the reader scrolls away. */
+  follow: boolean
+  /** Show the unread count and jump control while away from the end. */
+  showJumpToLatest: boolean
+  header?: ReactNode
+  footer?: ReactNode
+  empty?: ReactNode
+  viewportId?: string
+  "aria-label"?: string
+}
+
+function distanceFromEnd(element: HTMLElement) {
+  return Math.max(
+    0,
+    element.scrollHeight - element.clientHeight - element.scrollTop,
+  )
+}
+
+function captureReadingAnchor(element: HTMLElement): ReadingAnchor | null {
+  const viewportTop = element.getBoundingClientRect().top
+  const rendered = element.querySelectorAll<HTMLElement>(
+    "[data-windowed-row-key]",
+  )
+  for (const row of rendered) {
+    const bounds = row.getBoundingClientRect()
+    if (bounds.bottom > viewportTop) {
+      return {
+        key: row.dataset.windowedRowKey ?? "",
+        offset: bounds.top - viewportTop,
+      }
+    }
+  }
+  return null
+}
+
+function restoreReadingAnchor(element: HTMLElement, anchor: ReadingAnchor) {
+  const viewportTop = element.getBoundingClientRect().top
+  const rendered = element.querySelectorAll<HTMLElement>(
+    "[data-windowed-row-key]",
+  )
+  for (const row of rendered) {
+    if (row.dataset.windowedRowKey !== anchor.key) continue
+    element.scrollTop += row.getBoundingClientRect().top - viewportTop - anchor.offset
+    return true
+  }
+  return false
+}
+
+/**
+ * A bounded, variable-height transcript viewport. The caller owns presentation
+ * and disclosure state; this component owns only virtualization and following.
+ */
+export function WindowedTranscript<T extends { id: string }>({
+  blocks,
+  messageIds,
+  renderBlock,
+  follow,
+  showJumpToLatest,
+  header,
+  footer,
+  empty,
+  viewportId,
+  "aria-label": label = "Human / Agent transcript",
+}: WindowedTranscriptProps<T>) {
+  const viewportRef = useRef<HTMLDivElement>(null)
+  const contentRef = useRef<HTMLDivElement>(null)
+  const awayRef = useRef(false)
+  const followRef = useRef(follow)
+  const stickToEndRef = useRef(true)
+  const initializingRef = useRef(true)
+  const anchorRef = useRef<ReadingAnchor | null>(null)
+  const restoringAnchorRef = useRef(false)
+  const scrollFrameRef = useRef<number | null>(null)
+  const anchorFrameRef = useRef<number | null>(null)
+  const restoreFrameRef = useRef<number | null>(null)
+  const lastIndexRef = useRef(0)
+  const lastScrollOffsetRef = useRef(0)
+  const frozenOffsetRef = useRef<number | null>(null)
+  const priorFollowRef = useRef(follow)
+  const lastViewportHeightRef = useRef(0)
+  const lastEndGapRef = useRef(0)
+  const resizePinRef = useRef(false)
+  const readingIntentUntilRef = useRef(0)
+  const pointerReadingRef = useRef(false)
+  const [away, setAway] = useState(false)
+  const [unread, setUnread] = useState(0)
+  const [initializing, setInitializing] = useState(true)
+  const [endPadding, setEndPadding] = useState(48)
+  const priorIdsRef = useRef(new Set(messageIds))
+
+  followRef.current = follow
+  if (!follow && !initializingRef.current) {
+    stickToEndRef.current = false
+    if (priorFollowRef.current || frozenOffsetRef.current == null) {
+      frozenOffsetRef.current = lastScrollOffsetRef.current
+    }
+  } else if (follow) {
+    frozenOffsetRef.current = null
+  }
+  priorFollowRef.current = follow
+
+  const rows = useMemo(() => {
+    const next: WindowedRow<T>[] = []
+    if (header != null) {
+      next.push({ key: "slot:header", kind: "slot", content: header })
+    }
+    if (blocks.length === 0 && empty != null) {
+      next.push({ key: "slot:empty", kind: "slot", content: empty })
+    }
+    for (const block of blocks) {
+      next.push({
+        key: `block:${block.id}`,
+        kind: "block",
+        block,
+      })
+    }
+    if (footer != null) {
+      next.push({ key: "slot:footer", kind: "slot", content: footer })
+    }
+    return next
+  }, [blocks, empty, footer, header])
+  lastIndexRef.current = Math.max(0, rows.length - 1)
+
+  const rowKeys = useMemo<readonly string[]>(
+    () => rows.map((row) => row.key),
+    [rows],
+  )
+  const priorRowKeysRef = useRef(rowKeys)
+  const priorRowsRef = useRef(rows)
+  const rowsChanged = rows !== priorRowsRef.current
+  const keysChanged =
+    rowKeys.length !== priorRowKeysRef.current.length ||
+    rowKeys.some((key, index) => key !== priorRowKeysRef.current[index])
+  if (
+    keysChanged &&
+    awayRef.current &&
+    anchorRef.current &&
+    rowKeys.includes(anchorRef.current.key)
+  ) {
+    restoringAnchorRef.current = true
+  }
+
+  const getItemKey = useCallback(
+    (index: number) => rows[index]?.key ?? `missing:${index}`,
+    [rows],
+  )
+
+  const queueAnchorCapture = useCallback(() => {
+    if (anchorFrameRef.current != null) return
+    anchorFrameRef.current = requestAnimationFrame(() => {
+      anchorFrameRef.current = null
+      const element = viewportRef.current
+      if (element && awayRef.current && !restoringAnchorRef.current) {
+        anchorRef.current = captureReadingAnchor(element)
+      }
+    })
+  }, [])
+
+  const queueScrollToEnd = useCallback(
+    (instance: Virtualizer<HTMLDivElement, HTMLDivElement>) => {
+      if (scrollFrameRef.current != null || rows.length === 0) return
+      let attempts = 0
+      let stableFrames = 0
+      const settleEnd = () => {
+        attempts++
+        if (!stickToEndRef.current && !initializingRef.current) {
+          scrollFrameRef.current = null
+          return
+        }
+        const element = viewportRef.current
+        if (!element) {
+          scrollFrameRef.current = null
+          return
+        }
+        if (distanceFromEnd(element) <= 1) {
+          stableFrames++
+        } else {
+          stableFrames = 0
+          instance.scrollToIndex(lastIndexRef.current, {
+            align: "end",
+            behavior: "auto",
+          })
+          element.scrollTop = element.scrollHeight
+        }
+        if (attempts < 60 && stableFrames < 2) {
+          scrollFrameRef.current = requestAnimationFrame(settleEnd)
+        } else {
+          if (stableFrames < 2) element.scrollTop = element.scrollHeight
+          scrollFrameRef.current = null
+          resizePinRef.current = false
+          lastViewportHeightRef.current = element.clientHeight
+          lastEndGapRef.current = distanceFromEnd(element)
+          if (initializingRef.current) {
+            initializingRef.current = false
+            stickToEndRef.current = followRef.current
+            awayRef.current = false
+            lastScrollOffsetRef.current = element.scrollTop
+            if (!followRef.current) frozenOffsetRef.current = element.scrollTop
+            setAway(false)
+            setInitializing(false)
+          }
+        }
+      }
+      scrollFrameRef.current = requestAnimationFrame(settleEnd)
+    },
+    [rows.length],
+  )
+
+  // TanStack Virtual intentionally exposes a mutable controller; React Compiler
+  // leaves this component unmemoized while the controller owns scroll state.
+  // oxlint-disable-next-line react/incompatible-library
+  const virtualizer = useVirtualizer<HTMLDivElement, HTMLDivElement>({
+    count: rows.length,
+    getScrollElement: () => viewportRef.current,
+    estimateSize: (index) => (rows[index]?.kind === "slot" ? 96 : 180),
+    getItemKey,
+    paddingEnd: endPadding,
+    overscan: 6,
+    useFlushSync: false,
+    directDomUpdates: true,
+    onChange(instance, sync) {
+      if (awayRef.current && !restoringAnchorRef.current) {
+        queueAnchorCapture()
+      }
+      if (!sync && (stickToEndRef.current || initializingRef.current)) {
+        queueScrollToEnd(instance)
+      }
+    },
+  })
+
+  // Dynamic markdown and tool disclosures can resize above the reading point.
+  // Always retain that point; following rows are corrected to the end above.
+  virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, _delta, instance) =>
+    item.start < (instance.scrollOffset ?? 0) + instance.scrollAdjustments
+
+  const setContentElement = useCallback(
+    (element: HTMLDivElement | null) => {
+      contentRef.current = element
+      virtualizer.containerRef(element)
+    },
+    [virtualizer],
+  )
+
+  const updateEdge = useCallback(() => {
+    const element = viewportRef.current
+    if (!element || restoringAnchorRef.current) return
+    const gap = distanceFromEnd(element)
+    const height = element.clientHeight
+    const resizedWhilePinned =
+      lastViewportHeightRef.current > 0 &&
+      height !== lastViewportHeightRef.current &&
+      !awayRef.current &&
+      lastEndGapRef.current <= END_THRESHOLD &&
+      stickToEndRef.current &&
+      followRef.current
+    if (resizedWhilePinned) {
+      lastViewportHeightRef.current = height
+      resizePinRef.current = true
+      stickToEndRef.current = true
+      awayRef.current = false
+      setAway(false)
+      queueScrollToEnd(virtualizer)
+      return
+    }
+    lastViewportHeightRef.current = element.clientHeight
+    lastEndGapRef.current = gap
+    lastScrollOffsetRef.current = element.scrollTop
+    if (resizePinRef.current) return
+    const nextAway = gap > END_THRESHOLD
+    const readingIntent =
+      pointerReadingRef.current || performance.now() <= readingIntentUntilRef.current
+    if (
+      nextAway &&
+      stickToEndRef.current &&
+      followRef.current &&
+      !readingIntent
+    ) {
+      awayRef.current = false
+      setAway(false)
+      queueScrollToEnd(virtualizer)
+      return
+    }
+    if (!followRef.current && !restoringAnchorRef.current) {
+      frozenOffsetRef.current = element.scrollTop
+    }
+    awayRef.current = nextAway
+    setAway((current) => (current === nextAway ? current : nextAway))
+    if (nextAway) {
+      stickToEndRef.current = false
+      if (!restoringAnchorRef.current) {
+        anchorRef.current = captureReadingAnchor(element)
+        queueAnchorCapture()
+      }
+    } else {
+      setUnread(0)
+      stickToEndRef.current = followRef.current
+      readingIntentUntilRef.current = 0
+      anchorRef.current = null
+    }
+  }, [queueAnchorCapture, queueScrollToEnd, virtualizer])
+
+  const releaseResizePin = useCallback(() => {
+    if (!resizePinRef.current) return
+    resizePinRef.current = false
+    if (scrollFrameRef.current != null) {
+      cancelAnimationFrame(scrollFrameRef.current)
+      scrollFrameRef.current = null
+    }
+  }, [])
+
+  const markReadingIntent = useCallback(() => {
+    readingIntentUntilRef.current = performance.now() + 1_000
+    releaseResizePin()
+  }, [releaseResizePin])
+
+  const handleScroll = useCallback(
+    (_event: UIEvent<HTMLDivElement>) => updateEdge(),
+    [updateEdge],
+  )
+
+  useLayoutEffect(() => {
+    const element = viewportRef.current
+    if (!element) return
+    lastViewportHeightRef.current = element.clientHeight
+    lastEndGapRef.current = distanceFromEnd(element)
+    const observer = new ResizeObserver(() => {
+      const height = element.clientHeight
+      if (height === lastViewportHeightRef.current) return
+      const wasPinned =
+        !awayRef.current &&
+        lastEndGapRef.current <= END_THRESHOLD &&
+        stickToEndRef.current &&
+        followRef.current
+      lastViewportHeightRef.current = height
+      if (wasPinned || initializingRef.current) {
+        resizePinRef.current = true
+        stickToEndRef.current = true
+        awayRef.current = false
+        setAway(false)
+        queueScrollToEnd(virtualizer)
+      } else {
+        lastEndGapRef.current = distanceFromEnd(element)
+        if (awayRef.current) anchorRef.current = captureReadingAnchor(element)
+      }
+    })
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [queueScrollToEnd, virtualizer])
+
+  useLayoutEffect(() => {
+    const element = contentRef.current
+    if (!element) return
+    const updatePadding = () => {
+      const next = Number.parseFloat(getComputedStyle(element).paddingBottom)
+      if (Number.isFinite(next)) {
+        setEndPadding((current) => (current === next ? current : next))
+      }
+    }
+    updatePadding()
+    const observer = new ResizeObserver(updatePadding)
+    observer.observe(viewportRef.current ?? element)
+    return () => observer.disconnect()
+  }, [])
+
+  useLayoutEffect(() => {
+    if (rows.length === 0) {
+      awayRef.current = false
+      setAway(false)
+      setUnread(0)
+      initializingRef.current = false
+      stickToEndRef.current = follow
+      setInitializing(false)
+      return
+    }
+
+    if (initializingRef.current) {
+      virtualizer.scrollToIndex(rows.length - 1, {
+        align: "end",
+        behavior: "auto",
+      })
+      queueScrollToEnd(virtualizer)
+      return
+    }
+
+    const anchor = anchorRef.current
+    if (restoringAnchorRef.current && anchor) {
+      const index = rowKeys.indexOf(anchor.key)
+      const offset = index < 0 ? undefined : virtualizer.getOffsetForIndex(index, "start")
+      if (offset) {
+        virtualizer.scrollToOffset(offset[0] - anchor.offset, {
+          align: "start",
+          behavior: "auto",
+        })
+      }
+      let attempts = 0
+      let stableFrames = 0
+      const settleAnchor = () => {
+        attempts++
+        const element = viewportRef.current
+        if (!element) return
+        const before = element.scrollTop
+        const found = restoreReadingAnchor(element, anchor)
+        const correction = Math.abs(element.scrollTop - before)
+        stableFrames = found && correction < 1 ? stableFrames + 1 : 0
+        if (attempts < 12 && stableFrames < 2) {
+          restoreFrameRef.current = requestAnimationFrame(settleAnchor)
+          return
+        }
+        restoreFrameRef.current = null
+        anchorRef.current = captureReadingAnchor(element)
+        restoringAnchorRef.current = false
+        updateEdge()
+      }
+      restoreFrameRef.current = requestAnimationFrame(settleAnchor)
+    } else if (!follow && rowsChanged) {
+      const offset = frozenOffsetRef.current ?? lastScrollOffsetRef.current
+      restoringAnchorRef.current = true
+      let attempts = 0
+      let stableFrames = 0
+      const settleOffset = () => {
+        attempts++
+        const element = viewportRef.current
+        if (!element) return
+        const correction = Math.abs(element.scrollTop - offset)
+        element.scrollTop = offset
+        stableFrames = correction < 1 ? stableFrames + 1 : 0
+        if (attempts < 12 && stableFrames < 2) {
+          restoreFrameRef.current = requestAnimationFrame(settleOffset)
+          return
+        }
+        restoreFrameRef.current = null
+        restoringAnchorRef.current = false
+        updateEdge()
+      }
+      restoreFrameRef.current = requestAnimationFrame(settleOffset)
+    } else if (stickToEndRef.current && follow) {
+      virtualizer.scrollToIndex(rows.length - 1, {
+        align: "end",
+        behavior: "auto",
+      })
+    }
+
+    requestAnimationFrame(updateEdge)
+  }, [
+    follow,
+    keysChanged,
+    queueScrollToEnd,
+    rowKeys,
+    rowsChanged,
+    rows.length,
+    updateEdge,
+    virtualizer,
+  ])
+
+  useLayoutEffect(() => {
+    priorRowKeysRef.current = rowKeys
+    priorRowsRef.current = rows
+  }, [rowKeys, rows])
+
+  useLayoutEffect(() => {
+    const previous = priorIdsRef.current
+    let added = 0
+    for (const id of messageIds) if (!previous.has(id)) added++
+    priorIdsRef.current = new Set(messageIds)
+    if (added > 0 && (awayRef.current || !follow)) {
+      setUnread((current) => current + added)
+      if (!follow) {
+        awayRef.current = true
+        setAway(true)
+      }
+    }
+    requestAnimationFrame(updateEdge)
+  }, [follow, messageIds, updateEdge])
+
+  useLayoutEffect(
+    () => () => {
+      if (scrollFrameRef.current != null) {
+        cancelAnimationFrame(scrollFrameRef.current)
+        scrollFrameRef.current = null
+      }
+      if (anchorFrameRef.current != null) {
+        cancelAnimationFrame(anchorFrameRef.current)
+        anchorFrameRef.current = null
+      }
+      if (restoreFrameRef.current != null) {
+        cancelAnimationFrame(restoreFrameRef.current)
+        restoreFrameRef.current = null
+      }
+    },
+    [],
+  )
+
+  const jumpToLatest = useCallback(() => {
+    stickToEndRef.current = true
+    readingIntentUntilRef.current = 0
+    awayRef.current = false
+    setAway(false)
+    setUnread(0)
+    if (rows.length > 0) {
+      virtualizer.scrollToIndex(rows.length - 1, {
+        align: "end",
+        behavior: "auto",
+      })
+    }
+    requestAnimationFrame(() => {
+      stickToEndRef.current = followRef.current
+      updateEdge()
+    })
+  }, [rows.length, updateEdge, virtualizer])
+
+  const countLabel = `${unread} new ${unread === 1 ? "message" : "messages"}`
+  const virtualItems = virtualizer.getVirtualItems()
+
+  return (
+    <div
+      data-slot="message-scroller"
+      style={{
+        position: "relative",
+        display: "flex",
+        flex: "1 1 auto",
+        width: "100%",
+        minWidth: 0,
+        minHeight: 0,
+        overflow: "hidden",
+      }}
+    >
+      <div
+        ref={viewportRef}
+        id={viewportId}
+        data-slot="message-scroller-viewport"
+        role="region"
+        tabIndex={0}
+        aria-label={label}
+        onScroll={handleScroll}
+        onWheel={(event) => {
+          if (event.deltaY < 0 || awayRef.current) markReadingIntent()
+        }}
+        onTouchStart={markReadingIntent}
+        onTouchMove={markReadingIntent}
+        onPointerDown={(event) => {
+          if (event.target === event.currentTarget) {
+            pointerReadingRef.current = true
+            markReadingIntent()
+          }
+        }}
+        onPointerUp={() => {
+          if (pointerReadingRef.current) {
+            pointerReadingRef.current = false
+            markReadingIntent()
+          }
+        }}
+        onPointerCancel={() => {
+          pointerReadingRef.current = false
+        }}
+        onKeyDown={(event) => {
+          if (
+            event.key === "Tab" ||
+            (event.target === event.currentTarget &&
+              (event.key === "ArrowUp" ||
+                event.key === "PageUp" ||
+                event.key === "Home" ||
+                (event.key === " " && event.shiftKey)))
+          ) {
+            markReadingIntent()
+          }
+        }}
+        style={{
+          width: "100%",
+          minWidth: 0,
+          minHeight: 0,
+          overflowY: "auto",
+          overscrollBehavior: "contain",
+          scrollbarGutter: "stable",
+          visibility: initializing ? "hidden" : undefined,
+        }}
+      >
+        <div
+          ref={setContentElement}
+          data-slot="message-scroller-content"
+          role="log"
+          className="chat-transcript"
+          style={{ position: "relative", minHeight: "100%" }}
+        >
+          {virtualItems.map((virtualRow) => {
+            const row = rows[virtualRow.index]
+            if (!row) return null
+            return (
+              <div
+                key={row.key}
+                ref={virtualizer.measureElement}
+                data-index={virtualRow.index}
+                data-windowed-row-key={row.key}
+                data-slot={
+                  row.kind === "block" ? "message-scroller-item" : undefined
+                }
+                data-message-id={row.kind === "block" ? row.block.id : undefined}
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: "var(--transcript-inline-padding, 32px)",
+                  width:
+                    "calc(100% - 2 * var(--transcript-inline-padding, 32px))",
+                  minWidth: 0,
+                  paddingBottom:
+                    virtualRow.index === rows.length - 1
+                      ? 0
+                      : "var(--transcript-row-gap, 24px)",
+                  boxSizing: "border-box",
+                }}
+              >
+                {row.kind === "block"
+                  ? renderBlock(row.block)
+                  : row.content}
+              </div>
+            )
+          })}
+        </div>
+      </div>
+      {showJumpToLatest && away ? (
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          className="jump-latest"
+          aria-label={
+            unread > 0 ? `${countLabel}. Jump to latest` : "Jump to latest"
+          }
+          onClick={jumpToLatest}
+          style={{
+            position: "absolute",
+            left: "50%",
+            bottom: 16,
+            zIndex: 1,
+            transform: "translateX(-50%)",
+          }}
+        >
+          <ArrowDownIcon data-icon="inline-start" aria-hidden="true" />
+          <span aria-live="polite" aria-atomic="true">
+            {unread > 0 ? countLabel : "Jump to latest"}
+          </span>
+        </Button>
+      ) : null}
+    </div>
+  )
+}

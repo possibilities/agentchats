@@ -4,11 +4,13 @@ import {
   Transcript,
   TranscriptComposer,
   type TranscriptQueuedMessage,
+  type TranscriptSubmission,
 } from "@agentchats/transcript/react"
 import "@agentchats/transcript/styles.css"
 
 const host = {
   calls: [] as Array<{ action: string; args: string[] }>,
+  submissions: [] as TranscriptSubmission[],
   editing: null as string | null,
   fail: false,
   delay: false,
@@ -33,6 +35,8 @@ function Consumer() {
     stopping: false,
     disabled: false,
     allowInterrupt: true,
+    alwaysShowSend: false,
+    optimisticSubmit: false,
   })
   const [queue, setQueue] = useState<TranscriptQueuedMessage[]>([])
   Object.assign(window, {
@@ -41,6 +45,7 @@ function Consumer() {
   return (
     <>
       <p id="host-marker">Host page</p>
+      <button id="focus-target">Review transcript</button>
       <section
         aria-label="Agent lane"
         style={{ height: 740, display: "flex", flexDirection: "column" }}
@@ -65,9 +70,16 @@ function Consumer() {
         <TranscriptComposer
           {...props}
           queue={queue}
-          onSend={(text) => request("send", text)}
-          onSteer={(text) => request("steer", text)}
-          onQueue={async (text) => {
+          onSend={(text, submission) => {
+            host.submissions.push(submission)
+            return request("send", text)
+          }}
+          onSteer={(text, submission) => {
+            host.submissions.push(submission)
+            return request("steer", text)
+          }}
+          onQueue={async (text, submission) => {
+            host.submissions.push(submission)
             await request("queue", text)
             setQueue((rows) => [...rows, { id: `q${rows.length + 1}`, text }])
           }}

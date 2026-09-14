@@ -23,7 +23,7 @@ it (for example, `import '@fontsource-variable/geist-mono'`). Otherwise the syst
 monospace stack is used. The stylesheet does not download fonts or restyle the host.
 Pierre loads only when a file diff opens. Raw HTML in Markdown is not rendered.
 
-The 0.3.2 presentation puts Human input and Agent replies on the same left edge,
+The 0.3.3 presentation puts Human input and Agent replies on the same left edge,
 using a flat inset for Human input and open space for replies. Reading text is
 18px with 28px leading, message gaps are 24px (20px in narrow lanes), and prose
 is capped at 80ch.
@@ -63,8 +63,17 @@ The chip jumps to the end immediately, clears the count, and resumes follow;
 scrolling back to the bottom also clears it. Each transcript owns its count.
 `showJumpToLatest` defaults to true; set false only when the host supplies its own
 navigation. `follow={false}` disables automatic following while retaining the
-manual jump and unread count. Rendering
-a new array with stable IDs preserves tool and diff disclosures during updates.
+manual jump and unread count. Rendering a new array with stable IDs preserves
+tool, group, and diff disclosures during updates, including a single activity
+becoming a group or a group receiving prepended history. Disclosure state resets
+only when `transcriptId` changes.
+
+Set `windowed` for long transcripts. The opt-in renderer mounts only the visible
+variable-height blocks plus a small overscan, preserves the first visible block
+across prepended snapshots, and keeps exact per-message unread counts even when
+several activities share one block. Its header, footer, empty state, follow,
+jump, disclosure, viewport ID, and accessibility contracts match the default
+renderer. The default remains available for small transcripts and compatibility.
 
 Supply full text in `toolActivity.detail` and complete payloads in `sections`.
 The collapsed row applies visual ellipsis; expansion exposes both the detail
@@ -90,6 +99,11 @@ messages use an upper-right inspection button opening a modal with **Displayed
 text**, **Voice context**, and **Original message**. Other structured presentations
 retain their inline disclosures. This metadata never overwrites the source record or changes
 the Human / Agent author label.
+
+For optimistic Human input, `TranscriptMessage.deliveryStatus` adds subdued,
+provider-neutral status text to the message header. The host can show states such
+as **Sending…**, **Accepted · waiting for transcript**, or **Delivery unknown**,
+then omit the field when its stable message ID reconciles with the source record.
 
 For Codex voice envelopes, the reader's adapter uses the exported helper:
 
@@ -141,7 +155,9 @@ import { Transcript, TranscriptComposer } from '@agentchats/transcript/react'
     pending={requestPending}
     stopping={awaitingInterruptedTurn}
     disabled={!connected}
-    onSend={startTurn}
+    alwaysShowSend
+    optimisticSubmit
+    onSend={(text, submission) => startTurn(text, submission.clientId)}
     onSteer={steerCurrentTurn}
     onQueue={enqueueFollowUp}
     onInterrupt={interruptCurrentTurn}
@@ -177,6 +193,23 @@ input. Keep
 `pending` describes an in-flight host request; `active` describes running agent
 work. Active work permits further input; pending/stopping prevent duplicate
 operations. Hosts can independently disable the whole surface when unavailable.
+
+`alwaysShowSend` is an opt-in host layout. It keeps the **Send** control in the
+same bottom-right position for idle, active, empty, and pending states, disables
+it when no action is available, and never substitutes Stop. While active, the
+separate upper-right **Working** status remains still and the follow-up selector
+continues to choose the steer or queue callback even though the action label
+stays **Send**.
+
+`optimisticSubmit` clears the submitted draft before awaiting its callback and
+keeps the textarea writable while the action remains disabled. Every send
+callback receives `{ clientId, mode }` as its second argument so a host can key an
+optimistic message and reconcile the exact transport result. A rejection restores
+the submitted text when the new draft is empty. If the person has already typed
+another draft, the error retains the submitted text with **Restore sent text**,
+which appends it without overwriting the new draft. Each additional failure is
+retained separately until the person restores or dismisses it; a later submit
+never silently discards earlier text. Recovery never retries delivery.
 
 `queue` is a host-owned ordered array of `TranscriptQueuedMessage`:
 `{ id, text, pausedReason?, disabled?, canSteer?, canResume? }`. Hosts dispatch one

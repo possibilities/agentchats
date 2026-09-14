@@ -1,4 +1,4 @@
-import { lazy, Suspense, useMemo, useState } from "react"
+import { lazy, Suspense, useMemo } from "react"
 import { ChevronRightIcon, FileDiffIcon } from "lucide-react"
 
 import {
@@ -7,6 +7,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible"
 import { Marker, MarkerContent, MarkerIcon } from "@/components/ui/marker"
+import { useDisclosureState } from "@/transcript/disclosure-state"
 import type { FileChange, Message } from "@/types/message"
 
 const PierrePatchDiff = lazy(() => import("@/components/chat/pierre-diff"))
@@ -48,8 +49,14 @@ function buildPatch(change: FileChange) {
   return null
 }
 
-function FileDisclosure({ change }: { change: FileChange }) {
-  const [open, setOpen] = useState(false)
+function FileDisclosure({
+  change,
+  disclosureId,
+}: {
+  change: FileChange
+  disclosureId: string
+}) {
+  const [open, setOpen] = useDisclosureState(disclosureId)
   const patch = useMemo(() => buildPatch(change), [change])
   const target = change.movePath ? `${change.path} → ${change.movePath}` : change.path
 
@@ -89,7 +96,7 @@ function FileDisclosure({ change }: { change: FileChange }) {
 }
 
 export function FileChangeMessage({ message }: { message: Message }) {
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useDisclosureState(`tool:${message.id}`)
   const changes = message.fileChanges ?? []
   const activity = message.toolActivity
 
@@ -122,6 +129,7 @@ export function FileChangeMessage({ message }: { message: Message }) {
                 <FileDisclosure
                   key={`${change.path}:${change.movePath ?? ""}:${index}`}
                   change={change}
+                  disclosureId={`file:${message.id}:${change.path}:${change.movePath ?? ""}:${index}`}
                 />
               ))}
             </CollapsibleContent>

@@ -1,6 +1,6 @@
-import { Children, isValidElement, useState, type ReactNode } from "react"
+import { Children, isValidElement, memo, useState, type ReactNode } from "react"
 import { CheckIcon, CopyIcon } from "lucide-react"
-import ReactMarkdown from "react-markdown"
+import ReactMarkdown, { type Components } from "react-markdown"
 import rehypeHighlight from "rehype-highlight"
 import remarkGfm from "remark-gfm"
 
@@ -63,23 +63,31 @@ function CodeBlock({ children }: { children?: ReactNode }) {
   )
 }
 
-export function MarkdownContent({ content }: { content: string }) {
+const remarkPlugins = [remarkGfm]
+const rehypePlugins = [rehypeHighlight]
+const markdownComponents: Components = {
+  pre: ({ children }) => <CodeBlock>{children}</CodeBlock>,
+  a: ({ children, node: _node, ...props }) => (
+    <a {...props} target="_blank" rel="noreferrer">
+      {children}
+    </a>
+  ),
+}
+
+export const MarkdownContent = memo(function MarkdownContent({
+  content,
+}: {
+  content: string
+}) {
   return (
     <div className="markdown-content">
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeHighlight]}
-        components={{
-          pre: ({ children }) => <CodeBlock>{children}</CodeBlock>,
-          a: ({ children, node: _node, ...props }) => (
-            <a {...props} target="_blank" rel="noreferrer">
-              {children}
-            </a>
-          ),
-        }}
+        remarkPlugins={remarkPlugins}
+        rehypePlugins={rehypePlugins}
+        components={markdownComponents}
       >
         {content}
       </ReactMarkdown>
     </div>
   )
-}
+})

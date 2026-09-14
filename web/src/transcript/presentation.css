@@ -15,10 +15,12 @@
   container: transcript / inline-size;
 }
 .chat-transcript {
+  --transcript-row-gap: 24px;
+  --transcript-inline-padding: 32px;
   width: min(100%, var(--transcript-column));
   margin-inline: auto;
-  gap: 24px;
-  padding: 24px 32px 48px;
+  gap: var(--transcript-row-gap);
+  padding: 24px var(--transcript-inline-padding) 48px;
 }
 .thread-intro {
   display: flex;
@@ -94,7 +96,16 @@
   color: var(--text);
   font-weight: 500;
 }
+.message-delivery-status {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font: 13px var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 [data-slot="message-header"] time {
+  margin-left: auto;
   color: var(--muted);
   font: 13px var(--font-mono);
 }
@@ -478,6 +489,7 @@
 
 .transcript-composer,
 :scope.transcript-composer {
+  position: relative;
   flex: none;
   min-width: 0;
   width: 100%;
@@ -508,6 +520,7 @@
   box-shadow: none;
 }
 :is(.transcript-composer, :scope.transcript-composer) [data-slot="input-group"] {
+  position: relative;
   border-radius: var(--radius);
   background: var(--field);
   box-shadow: none;
@@ -531,6 +544,14 @@
   color: var(--muted);
   font-size: 13px;
 }
+.transcript-composer__working {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 20px;
+}
 .transcript-composer__mode {
   margin-inline-start: -7px;
 }
@@ -553,6 +574,34 @@
   overflow-wrap: anywhere;
   font-size: 13px;
   line-height: 1.5;
+}
+.transcript-composer__error > p {
+  margin: 0;
+}
+.transcript-composer__recovery {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 8px;
+  padding-left: 12px;
+  border-left: 1px solid var(--danger);
+}
+.transcript-composer__recovery > div {
+  flex: 1;
+  min-width: 0;
+}
+.transcript-composer__recovery p {
+  margin: 0;
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.transcript-composer__recovery .transcript-composer__recovery-error {
+  margin-bottom: 4px;
+  color: var(--danger);
+}
+.transcript-composer__recovery button {
+  flex: none;
 }
 .transcript-queue__reason {
   color: var(--muted);
@@ -623,10 +672,11 @@
 
 /* Respond to the lane, including two agentvoice lanes in a wide host. */
 @container transcript (max-width: 800px) {
-  .chat-transcript, .transcript-composer__content { padding-inline: 20px; }
+  .chat-transcript { --transcript-inline-padding: 20px; }
+  .transcript-composer__content { padding-inline: 20px; }
 }
 @container transcript (max-width: 640px) {
-  .chat-transcript { gap: 20px; padding-block: 20px 40px; }
+  .chat-transcript { --transcript-row-gap: 20px; padding-block: 20px 40px; }
   .thread-intro h1 { font-size: 20px; }
   .thread-intro p > :last-child { margin-left: 0; }
   .activity-group__trigger { flex-wrap: wrap; row-gap: 4px; }
@@ -637,7 +687,8 @@
   .tool-disclosure__meta { display: none; }
 }
 @container transcript (max-width: 400px) {
-  .chat-transcript, .transcript-composer__content { padding-inline: 16px; }
+  .chat-transcript { --transcript-inline-padding: 16px; }
+  .transcript-composer__content { padding-inline: 16px; }
 }
 @media (pointer: coarse) {
   .tool-disclosure__trigger,

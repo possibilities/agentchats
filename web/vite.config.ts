@@ -23,7 +23,13 @@ export default defineConfig({
   preview: { host: "127.0.0.1" },
   // Prebundle the lazy diff renderer too, so opening the first file in dev
   // cannot trigger a dependency-optimizer reload and discard disclosure state.
-  optimizeDeps: { include: ["@pierre/diffs", "@pierre/diffs/react"] },
+  optimizeDeps: {
+    include: [
+      "@pierre/diffs",
+      "@pierre/diffs/react",
+      "@tanstack/react-virtual",
+    ],
+  },
   plugins: [readerLocalApi(), react(), tailwindcss()],
   resolve: {
     alias: {

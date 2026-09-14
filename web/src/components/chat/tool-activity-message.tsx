@@ -1,4 +1,3 @@
-import { useState } from "react"
 import { CircleAlertIcon, ChevronRightIcon, TerminalSquareIcon } from "lucide-react"
 
 import {
@@ -7,10 +6,11 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible"
 import { Marker, MarkerContent, MarkerIcon } from "@/components/ui/marker"
+import { useDisclosureState } from "@/transcript/disclosure-state"
 import type { Message } from "@/types/message"
 
 export function ToolActivityMessage({ message }: { message: Message }) {
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useDisclosureState(`tool:${message.id}`)
   const activity = message.toolActivity
   const isError = message.status === "error"
   const summary = activity?.detail || message.content

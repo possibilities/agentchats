@@ -21,6 +21,19 @@ import {
 export type TranscriptFollowUpMode = "steer" | "queue"
 type ActionResult = void | Promise<void>
 
+export interface TranscriptSubmission {
+  /** Host-visible identity for optimistic rendering and exact transport reconciliation. */
+  clientId: string
+  mode: "send" | TranscriptFollowUpMode
+}
+
+let submissionSequence = 0
+
+function createSubmissionClientId() {
+  return globalThis.crypto?.randomUUID?.() ??
+    `agentchats-${Date.now()}-${++submissionSequence}`
+}
+
 export interface TranscriptQueuedMessage {
   id: string
   text: string
@@ -40,12 +53,16 @@ export interface TranscriptComposerProps {
   /** Keep true after interrupt acknowledgment until the terminal turn event. */
   stopping?: boolean
   disabled?: boolean
+  /** Keep one Send action visible through active and pending host states. */
+  alwaysShowSend?: boolean
+  /** Clear accepted input before awaiting the callback and retain explicit failure recovery. */
+  optimisticSubmit?: boolean
   /** Defaults to the Codex desktop setting, steer. */
   followUpMode?: TranscriptFollowUpMode
   onFollowUpModeChange?: (mode: TranscriptFollowUpMode) => void
-  onSend?: (text: string) => ActionResult
-  onSteer?: (text: string) => ActionResult
-  onQueue?: (text: string) => ActionResult
+  onSend?: (text: string, submission: TranscriptSubmission) => ActionResult
+  onSteer?: (text: string, submission: TranscriptSubmission) => ActionResult
+  onQueue?: (text: string, submission: TranscriptSubmission) => ActionResult
   /** Omit to show noninteractive working status instead of Stop. */
   onInterrupt?: () => ActionResult
   /** Host-owned FIFO. This component never drains or retries it automatically. */
@@ -73,6 +90,8 @@ function Composer({
   pending = false,
   stopping = false,
   disabled = false,
+  alwaysShowSend = false,
+  optimisticSubmit = false,
   followUpMode,
   onFollowUpModeChange,
   onSend,
@@ -93,10 +112,15 @@ function Composer({
   const inputId = useId()
   const input = useRef<HTMLTextAreaElement>(null)
   const locked = useRef(false)
+  const draftRef = useRef(defaultValue)
   const [draft, setDraft] = useState(defaultValue)
   const [localMode, setLocalMode] = useState<TranscriptFollowUpMode>("steer")
   const [operation, setOperation] = useState<string | null>(null)
+  const [submissionPending, setSubmissionPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [recoveries, setRecoveries] = useState<
+    Array<{ clientId: string; text: string; error: string }>
+  >([])
   const [editing, setEditing] = useState<{
     id: string
     savedDraft: string
@@ -118,7 +142,19 @@ function Composer({
     (editing
       ? Boolean(editedRow && !editedRow.disabled && onEditQueued)
       : Boolean(action))
-  const showStop = !editing && active && draft.trim().length === 0
+  const showStop =
+    !alwaysShowSend && !editing && active && draft.trim().length === 0
+
+  function updateDraft(value: string) {
+    draftRef.current = value
+    setDraft(value)
+  }
+
+  function failureMessage(cause: unknown) {
+    return cause instanceof Error
+      ? cause.message
+      : "The request failed. Your text has been kept."
+  }
 
   async function run(
     name: string,
@@ -133,13 +169,50 @@ function Composer({
       await callback()
       await accepted?.()
     } catch (cause) {
-      setError(
-        cause instanceof Error
-          ? cause.message
-          : "The request failed. Your text has been kept.",
-      )
+      setError(failureMessage(cause))
     } finally {
       locked.current = false
+      setOperation(null)
+    }
+  }
+
+  async function runSubmission(
+    name: string,
+    callback: () => ActionResult,
+    text: string,
+    submission: TranscriptSubmission,
+  ) {
+    if (locked.current || unavailable) return
+    locked.current = true
+    setOperation(name)
+    setSubmissionPending(true)
+    setError(null)
+    if (optimisticSubmit) {
+      updateDraft("")
+      input.current?.focus()
+    }
+    try {
+      await callback()
+      if (!optimisticSubmit) {
+        updateDraft("")
+        input.current?.focus()
+      }
+    } catch (cause) {
+      const message = failureMessage(cause)
+      if (optimisticSubmit) {
+        if (draftRef.current.length === 0) {
+          updateDraft(text)
+          setError(message)
+        } else {
+          setRecoveries((current) => [
+            ...current,
+            { clientId: submission.clientId, text, error: message },
+          ])
+        }
+      } else setError(message)
+    } finally {
+      locked.current = false
+      setSubmissionPending(false)
       setOperation(null)
     }
   }
@@ -147,7 +220,7 @@ function Composer({
   async function finishEditing() {
     if (!editing) return
     await onEditingQueuedChange?.(null)
-    setDraft(editing.savedDraft)
+    updateDraft(editing.savedDraft)
     setEditing(null)
     input.current?.focus()
   }
@@ -162,13 +235,15 @@ function Composer({
     const submitMode = invertMode ? (mode === "steer" ? "queue" : "steer") : mode
     const send = !active ? onSend : submitMode === "steer" ? onSteer : onQueue
     if (!send) return
-    void run(
+    const submission: TranscriptSubmission = {
+      clientId: createSubmissionClientId(),
+      mode: active ? submitMode : "send",
+    }
+    void runSubmission(
       !active ? "Sending…" : submitMode === "steer" ? "Steering…" : "Queueing…",
-      () => send(text),
-      () => {
-        setDraft("")
-        input.current?.focus()
-      },
+      () => send(text, submission),
+      text,
+      submission,
     )
   }
 
@@ -179,14 +254,22 @@ function Composer({
       () => onEditingQueuedChange?.(row.id),
       () => {
         setEditing({ id: row.id, savedDraft: editing?.savedDraft ?? draft })
-        setDraft(row.text)
+        updateDraft(row.text)
         input.current?.focus()
       },
     )
   }
 
   return (
-    <div className={cn("agentchats-transcript transcript-composer", className)}>
+    <div
+      className={cn("agentchats-transcript transcript-composer", className)}
+      data-always-show-send={alwaysShowSend || undefined}
+    >
+      {alwaysShowSend && active ? (
+        <span className="transcript-composer__working" role="status">
+          Working
+        </span>
+      ) : null}
       <div className="transcript-composer__content">
         {queue.length > 0 ? (
           <section className="transcript-queue" aria-label="Queued messages">
@@ -289,14 +372,20 @@ function Composer({
               ref={input}
               id={inputId}
               aria-label={editing ? "Edit queued message" : label}
-              aria-describedby={error ? `${inputId}-error` : undefined}
-              aria-invalid={Boolean(error)}
+              aria-describedby={
+                error || recoveries.length > 0 ? `${inputId}-error` : undefined
+              }
+              aria-invalid={Boolean(error || recoveries.length > 0)}
               placeholder={placeholder}
               value={draft}
               disabled={disabled}
-              readOnly={pending || operation !== null || stopping}
+              readOnly={
+                optimisticSubmit
+                  ? operation !== null && !submissionPending
+                  : pending || operation !== null || stopping
+              }
               onChange={(event) => {
-                setDraft(event.target.value)
+                updateDraft(event.target.value)
                 setError(null)
               }}
               onKeyDown={(event) => {
@@ -371,7 +460,17 @@ function Composer({
                   ? "Stopping…"
                   : (operation ?? (pending ? "Sending…" : ""))}
               </span>
-              {(showStop || stopping) && !onInterrupt ? (
+              {alwaysShowSend ? (
+                <InputGroupButton
+                  type="submit"
+                  size="sm"
+                  variant="default"
+                  disabled={!canSubmit}
+                >
+                  <ArrowUpIcon data-icon="inline-start" aria-hidden="true" />
+                  {editing ? "Save queued message" : "Send"}
+                </InputGroupButton>
+              ) : (showStop || stopping) && !onInterrupt ? (
                 <span className="transcript-composer__progress" role="status">
                   <LoaderCircleIcon aria-hidden="true" />
                   {stopping ? "Stopping…" : "Working…"}
@@ -402,14 +501,61 @@ function Composer({
               )}
             </InputGroupAddon>
           </InputGroup>
-          {error ? (
-            <p
+          {error || recoveries.length > 0 ? (
+            <div
               className="transcript-composer__error"
-              role="alert"
               id={`${inputId}-error`}
             >
-              {error}
-            </p>
+              {error ? <p role="alert">{error}</p> : null}
+              {recoveries.map((recovery) => (
+                <div
+                  className="transcript-composer__recovery"
+                  key={recovery.clientId}
+                  role="alert"
+                >
+                  <div>
+                    <p className="transcript-composer__recovery-error">
+                      {recovery.error}
+                    </p>
+                    <p>{recovery.text}</p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      updateDraft(
+                        draftRef.current.length > 0
+                          ? `${draftRef.current}\n\n${recovery.text}`
+                          : recovery.text,
+                      )
+                      setRecoveries((current) =>
+                        current.filter(
+                          (entry) => entry.clientId !== recovery.clientId,
+                        ),
+                      )
+                      input.current?.focus()
+                    }}
+                  >
+                    Restore sent text
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() =>
+                      setRecoveries((current) =>
+                        current.filter(
+                          (entry) => entry.clientId !== recovery.clientId,
+                        ),
+                      )
+                    }
+                  >
+                    Dismiss sent text
+                  </Button>
+                </div>
+              ))}
+            </div>
           ) : null}
         </form>
       </div>

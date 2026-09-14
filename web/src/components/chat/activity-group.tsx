@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { memo, useMemo } from "react"
 import { ChevronRightIcon } from "lucide-react"
 import { ChatMessage } from "@/components/chat/chat-message"
 import {
@@ -7,10 +7,29 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible"
 import { activitySummary } from "@/lib/transcript"
+import {
+  useAnyDisclosure,
+  useDisclosureState,
+} from "@/transcript/disclosure-state"
 import type { Message } from "@/types/message"
 
-export function ActivityGroup({ messages }: { messages: readonly Message[] }) {
-  const [open, setOpen] = useState(false)
+export const ActivityGroup = memo(function ActivityGroup({
+  messages,
+}: {
+  messages: readonly Message[]
+}) {
+  const groupKeys = useMemo(
+    () => messages.map((message) => `group:${message.id}`),
+    [messages],
+  )
+  const childKeys = useMemo(
+    () => messages.map((message) => `tool:${message.id}`),
+    [messages],
+  )
+  const [open, setOpen] = useDisclosureState(
+    groupKeys,
+    useAnyDisclosure(childKeys),
+  )
   const { kinds, errors, running, files } = activitySummary(messages)
   if (messages.length === 1) return <ChatMessage message={messages[0]} />
 
@@ -61,4 +80,4 @@ export function ActivityGroup({ messages }: { messages: readonly Message[] }) {
       </CollapsibleContent>
     </Collapsible>
   )
-}
+})

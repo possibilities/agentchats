@@ -2,6 +2,7 @@
 @import "theme.css";
 @import "presentation.css";
 @source "./transcript.tsx";
+@source "./windowed-transcript.tsx";
 @source "./composer.tsx";
 @source "../components/chat";
 @source "../components/ui/button.tsx";

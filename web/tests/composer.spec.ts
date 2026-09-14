@@ -108,6 +108,7 @@ test("active mode defaults to Steer, exposes Queue, and keeps Stop pending until
 test("editing waits for host acceptance and cancel restores the draft without sending", async ({
   page,
 }) => {
+  await update(page, { alwaysShowSend: true })
   await page.evaluate(() => {
     ;(window as any).composerHost.setQueue([
       { id: "one", text: "A queued message" },
@@ -190,9 +191,17 @@ test("queued edit preserves position and prior draft; paused rows require explic
     "first",
   )
   await edit.fill("Edited first queued")
+  await page.evaluate(() => {
+    ;(window as any).composerHost.delay = true
+  })
   await page
     .getByRole("button", { name: "Save queued message", exact: true })
     .click()
+  await expect(edit).toHaveAttribute("readonly")
+  await page.evaluate(() => (window as any).composerHost.settle())
+  await page.evaluate(() => {
+    ;(window as any).composerHost.delay = false
+  })
   await expect(
     page.getByRole("textbox", { name: "Message Agent", exact: true }),
   ).toHaveValue("Existing unsent draft")
@@ -306,4 +315,139 @@ test("hosts without interrupt show passive progress and preserve steering and qu
   await input.fill("Then review the result")
   await input.press("Enter")
   expect((await calls(page)).at(-1)).toEqual({ action: "queue", args: ["Then review the result"] })
+})
+
+test("host Send mode stays stable and preserves a newer draft across optimistic failure", async ({
+  page,
+}) => {
+  await update(page, {
+    active: true,
+    alwaysShowSend: true,
+    optimisticSubmit: true,
+  })
+  const input = page.getByRole("textbox", {
+    name: "Message Agent",
+    exact: true,
+  })
+  const send = page.getByRole("button", { name: "Send", exact: true })
+  await expect(send).toBeDisabled()
+  await expect(page.getByRole("button", { name: "Stop Agent" })).toHaveCount(0)
+  const working = page.getByRole("status", { name: "" }).filter({ hasText: "Working" })
+  await expect(working).toHaveText("Working")
+  expect(
+    await working.evaluate((element) =>
+      Boolean(element.closest('[data-slot="input-group-addon"]')),
+    ),
+  ).toBe(false)
+  await input.fill("First submitted draft")
+  await page.evaluate(() => {
+    ;(window as any).composerHost.delay = true
+  })
+  await send.click()
+  await expect(input).toHaveValue("")
+  await expect(input).not.toHaveAttribute("readonly")
+  await input.fill("New draft while awaiting delivery")
+  await expect(send).toBeDisabled()
+  const focusTarget = page.getByRole("button", { name: "Review transcript" })
+  await focusTarget.focus()
+  await expect(focusTarget).toBeFocused()
+  expect(await calls(page)).toEqual([
+    { action: "steer", args: ["First submitted draft"] },
+  ])
+  const submission = await page.evaluate(
+    () => (window as any).composerHost.submissions[0],
+  )
+  expect(submission.mode).toBe("steer")
+  expect(submission.clientId).toMatch(/\S+/)
+
+  await page.evaluate(() =>
+    (window as any).composerHost.settle("Delivery is unknown."),
+  )
+  await expect(page.getByRole("alert")).toContainText("Delivery is unknown.")
+  await expect(page.getByRole("alert")).toContainText("First submitted draft")
+  await expect(focusTarget).toBeFocused()
+  await expect(input).toHaveValue("New draft while awaiting delivery")
+  await page.getByRole("button", { name: "Restore sent text" }).click()
+  await expect(input).toHaveValue(
+    "New draft while awaiting delivery\n\nFirst submitted draft",
+  )
+  await expect(page.getByRole("alert")).toHaveCount(0)
+})
+
+test("optimistic failure restores submitted text when no newer draft exists", async ({
+  page,
+}) => {
+  await update(page, { alwaysShowSend: true, optimisticSubmit: true })
+  const input = page.getByRole("textbox", {
+    name: "Message Agent",
+    exact: true,
+  })
+  await page.evaluate(() => {
+    ;(window as any).composerHost.fail = true
+  })
+  await input.fill("Recover this exact text")
+  await input.press("Enter")
+  await expect(page.getByRole("alert")).toContainText(
+    "Connection lost; delivery is unknown.",
+  )
+  await expect(input).toHaveValue("Recover this exact text")
+  await expect(page.getByRole("button", { name: "Restore sent text" })).toHaveCount(0)
+})
+
+test("optimistic recovery retains every failed submission beside a newer draft", async ({
+  page,
+}) => {
+  await update(page, {
+    active: true,
+    alwaysShowSend: true,
+    optimisticSubmit: true,
+  })
+  const input = page.getByRole("textbox", {
+    name: "Message Agent",
+    exact: true,
+  })
+  const send = page.getByRole("button", { name: "Send", exact: true })
+  await page.evaluate(() => {
+    ;(window as any).composerHost.delay = true
+  })
+
+  await input.fill("First failed submission")
+  await send.click()
+  await input.fill("Second failed submission")
+  await page.evaluate(() =>
+    (window as any).composerHost.settle("First delivery failed."),
+  )
+  await expect(page.getByRole("alert")).toContainText(
+    "First delivery failed.",
+  )
+  await expect(page.getByRole("alert")).toContainText(
+    "First failed submission",
+  )
+
+  await send.click()
+  await input.fill("New draft remains editable")
+  await page.evaluate(() =>
+    (window as any).composerHost.settle("Second delivery failed."),
+  )
+  await expect(page.getByRole("alert")).toHaveCount(2)
+  await expect(page.getByRole("alert").nth(0)).toContainText(
+    "First failed submission",
+  )
+  await expect(page.getByRole("alert").nth(1)).toContainText(
+    "Second failed submission",
+  )
+  await expect(input).toHaveValue("New draft remains editable")
+
+  const restore = page.getByRole("button", { name: "Restore sent text" })
+  await restore.nth(0).click()
+  await restore.nth(0).click()
+  await expect(input).toHaveValue(
+    "New draft remains editable\n\nFirst failed submission\n\nSecond failed submission",
+  )
+  await expect(page.getByRole("alert")).toHaveCount(0)
+  const submissions = await page.evaluate(
+    () => (window as any).composerHost.submissions,
+  )
+  expect(submissions).toHaveLength(2)
+  expect(submissions[0].clientId).not.toBe(submissions[1].clientId)
 })

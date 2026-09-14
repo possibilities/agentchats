@@ -32,6 +32,11 @@ export const ChatMessage = memo(function ChatMessage({
       <MessageContent className={isVoiceHandoff ? "voice-message" : undefined}>
         <MessageHeader>
           <span className="message-author">{isUser ? "Human" : "Agent"}</span>
+          {isUser && message.deliveryStatus ? (
+            <span className="message-delivery-status" role="status">
+              {message.deliveryStatus}
+            </span>
+          ) : null}
           {message.createdAt ? (
             <time
               dateTime={message.createdAt}

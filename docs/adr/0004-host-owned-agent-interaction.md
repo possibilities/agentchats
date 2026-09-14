@@ -59,6 +59,23 @@ an uncertain-delivery explanation without enabling a duplicate submission.
 Editing first awaits host acceptance so the dispatcher can pause the row. Save
 updates its original position; cancel restores the previous composer draft.
 
+## Host continuity amendment (2026-09-14)
+
+Hosts that keep a fixed composer dock can opt into `alwaysShowSend`. The normal
+composer action then remains **Send** while idle, active, empty, or pending; the
+button disables when it cannot act, active work appears as a separate **Working**
+status, and the steer/queue selector still chooses transport behavior. Explicit
+queue editing remains **Save queued message** because it updates an existing row.
+
+Hosts can separately opt into `optimisticSubmit`. The component clears submitted
+text before awaiting transport, supplies a stable `{ clientId, mode }` submission
+identity, and leaves the textarea writable while preventing duplicate dispatch.
+A definite rejection restores the submitted text only when no newer draft exists;
+otherwise recovery preserves both texts and never retries. Every later failure
+remains available until the person explicitly restores or dismisses it. The provider-neutral
+`deliveryStatus` message field lets the host describe an optimistic Human row
+until that same client ID reconciles with the transcript source.
+
 ## Consequences
 
 Agentvoice wires native app-server transport and exact thread/turn identity.

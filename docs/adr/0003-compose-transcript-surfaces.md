@@ -31,6 +31,16 @@ the existing reader endpoints. Components expose composition slots and never
 import session navigation, browser preferences, a server, or database discovery.
 The optional stylesheet scopes the existing design to transcript containers.
 
+## Long transcript amendment (2026-09-14)
+
+The React entry offers an opt-in `windowed` transcript renderer for histories
+where mounting every activity and Markdown subtree makes scrolling miss frames.
+It virtualizes variable-height grouped blocks, retains the first visible block
+across prepends, and counts unread messages from exact visible message IDs rather
+than block count. The existing renderer remains the default. Both renderers keep
+the same host slots, follow and jump behavior, disclosure provider, DOM roles,
+and transcript-incarnation reset boundary.
+
 ## Consequences
 
 The package can be built, packed, and installed without exporting the application

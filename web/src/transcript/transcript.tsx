@@ -1,4 +1,11 @@
-import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react"
+import {
+  memo,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react"
 import { ArrowDownIcon } from "lucide-react"
 import { cn } from "cn"
 import { ActivityGroup } from "../components/chat/activity-group"
@@ -16,7 +23,9 @@ import {
 } from "../components/ui/message-scroller"
 import { groupTranscript, type TranscriptEntry } from "../lib/transcript"
 import type { Message } from "../types/message"
+import { DisclosureStateProvider } from "./disclosure-state"
 import type { TranscriptDetail } from "./types"
+import { WindowedTranscript } from "./windowed-transcript"
 
 /** Keep subscription updates out of the transcript's message rendering. */
 function TranscriptFollow({
@@ -26,10 +35,22 @@ function TranscriptFollow({
 }: Pick<Required<TranscriptProps>, "messages" | "follow" | "showJumpToLatest">) {
   const { end: away } = useMessageScrollerScrollable()
   const { scrollToEnd } = useMessageScroller()
-  const ids = useMemo(
-    () => new Set(messages.map((message) => message.id)),
+  const orderedIds = useMemo(
+    () => messages.map((message) => message.id),
     [messages],
   )
+  const [storedIds, setStoredIds] = useState(() => ({
+    ordered: orderedIds,
+    set: new Set(orderedIds) as ReadonlySet<string>,
+  }))
+  let ids = storedIds
+  if (
+    orderedIds.length !== storedIds.ordered.length ||
+    orderedIds.some((id, index) => id !== storedIds.ordered[index])
+  ) {
+    ids = { ordered: orderedIds, set: new Set(orderedIds) }
+    setStoredIds(ids)
+  }
   const [previous, setPrevious] = useState({ ids, away, follow, unread: 0 })
   const wasFollowing = useRef(follow)
   let unread = previous.unread
@@ -41,7 +62,7 @@ function TranscriptFollow({
     if (!away && (follow || previous.away)) {
       unread = 0
     } else if (previous.ids !== ids) {
-      for (const id of ids) if (!previous.ids.has(id)) unread++
+      for (const id of ids.set) if (!previous.ids.set.has(id)) unread++
     }
     setPrevious({ ids, away, follow, unread })
   }
@@ -78,21 +99,100 @@ export interface TranscriptBlockProps {
   block: TranscriptEntry
 }
 
-function BlockContent({ block }: TranscriptBlockProps) {
+const BlockContent = memo(function BlockContent({ block }: TranscriptBlockProps) {
   return block.kind === "activity" ? (
     <ActivityGroup messages={block.messages} />
   ) : (
     <ChatMessage message={block.message} />
   )
+})
+
+const TranscriptItem = memo(function TranscriptItem({
+  block,
+}: TranscriptBlockProps) {
+  return (
+    <MessageScrollerItem messageId={block.id}>
+      <BlockContent block={block} />
+    </MessageScrollerItem>
+  )
+})
+
+function renderTranscriptBlock(block: TranscriptEntry) {
+  return <BlockContent block={block} />
+}
+
+function useVisibleMessages(
+  messages: readonly Message[],
+  detail: TranscriptDetail,
+) {
+  const next = useMemo(
+    () =>
+      detail === "full"
+        ? messages
+        : messages.filter(
+            (message) =>
+              message.role === "user" || message.role === "assistant",
+          ),
+    [messages, detail],
+  )
+  const [stored, setStored] = useState(() => ({ input: next, output: next }))
+  if (next === stored.input) return stored.output
+  let output = next
+  if (
+    next.length === stored.output.length &&
+    next.every((message, index) => message === stored.output[index])
+  ) {
+    output = stored.output
+  }
+  setStored({ input: next, output })
+  return output
+}
+
+function useTranscriptBlocks(messages: readonly Message[]) {
+  const grouped = useMemo(() => groupTranscript(messages), [messages])
+  const [stored, setStored] = useState<{
+    input: readonly TranscriptEntry[]
+    output: readonly TranscriptEntry[]
+  }>(() => ({ input: grouped, output: grouped }))
+  if (grouped === stored.input) return stored.output
+  const previous = stored.output
+  const previousById = new Map(previous.map((block) => [block.id, block]))
+  const next = grouped.map((block) => {
+      const prior = previousById.get(block.id)
+      if (!prior || prior.kind !== block.kind) return block
+      if (block.kind === "message" && prior.kind === "message") {
+        return block.message === prior.message ? prior : block
+      }
+      if (block.kind === "activity" && prior.kind === "activity") {
+        return block.messages.length === prior.messages.length &&
+          block.messages.every(
+            (message, index) => message === prior.messages[index],
+          )
+          ? prior
+          : block
+      }
+      return block
+  })
+  if (
+    next.length === previous.length &&
+    next.every((block, index) => block === previous[index])
+  ) {
+    setStored({ input: grouped, output: previous })
+    return previous
+  }
+  setStored({ input: grouped, output: next })
+  return next
 }
 
 /** A single prose message or collapsed activity run, for host-owned layouts. */
 export function TranscriptBlock({ block }: TranscriptBlockProps) {
   return (
     <div className="agentchats-transcript">
-      <TooltipProvider>
-        <BlockContent block={block} />
-      </TooltipProvider>
+      <DisclosureStateProvider>
+        <TooltipProvider>
+          <BlockContent block={block} />
+        </TooltipProvider>
+      </DisclosureStateProvider>
     </div>
   )
 }
@@ -107,6 +207,8 @@ export interface TranscriptProps {
   follow?: boolean
   /** Show the new-message count and jump control when away from the end. Default true. */
   showJumpToLatest?: boolean
+  /** Bound mounted rows for long transcripts while preserving reading position. */
+  windowed?: boolean
   header?: ReactNode
   footer?: ReactNode
   empty?: ReactNode
@@ -123,6 +225,7 @@ export function Transcript({
   loading = false,
   follow = true,
   showJumpToLatest = true,
+  windowed = false,
   header,
   footer,
   empty,
@@ -130,51 +233,63 @@ export function Transcript({
   viewportId,
   "aria-label": label = "Human / Agent transcript",
 }: TranscriptProps) {
-  const visibleMessages = useMemo(
-    () =>
-      detail === "full"
-        ? messages
-        : messages.filter(
-            (message) =>
-              message.role === "user" || message.role === "assistant",
-          ),
-    [messages, detail],
+  const visibleMessages = useVisibleMessages(messages, detail)
+  const blocks = useTranscriptBlocks(visibleMessages)
+  const messageIds = useMemo(
+    () => visibleMessages.map((message) => message.id),
+    [visibleMessages],
   )
-  const blocks = useMemo(() => groupTranscript(visibleMessages), [visibleMessages])
+  const incarnationKey = `${transcriptId}:${detail}:${loading ? "loading" : "ready"}`
   return (
     <div className={cn("agentchats-transcript chat-pane", className)}>
-      <TooltipProvider>
-        <MessageScrollerProvider
-          autoScroll={follow}
-          scrollEdgeThreshold={64}
-          defaultScrollPosition="end"
-          key={`${transcriptId}:${detail}:${loading ? "loading" : "ready"}`}
-        >
-          <MessageScroller>
-            <MessageScrollerViewport
-              id={viewportId}
-              tabIndex={0}
-              aria-label={label}
-            >
-              <MessageScrollerContent className="chat-transcript">
-                {header}
-                {blocks.length === 0 ? empty : null}
-                {blocks.map((block) => (
-                  <MessageScrollerItem key={block.id} messageId={block.id}>
-                    <BlockContent block={block} />
-                  </MessageScrollerItem>
-                ))}
-                {footer}
-              </MessageScrollerContent>
-            </MessageScrollerViewport>
-            <TranscriptFollow
-              messages={visibleMessages}
+      <DisclosureStateProvider key={transcriptId}>
+        <TooltipProvider>
+          {windowed ? (
+            <WindowedTranscript
+              key={incarnationKey}
+              blocks={blocks}
+              messageIds={messageIds}
+              renderBlock={renderTranscriptBlock}
               follow={follow}
               showJumpToLatest={showJumpToLatest}
+              header={header}
+              footer={footer}
+              empty={empty}
+              viewportId={viewportId}
+              aria-label={label}
             />
-          </MessageScroller>
-        </MessageScrollerProvider>
-      </TooltipProvider>
+          ) : (
+            <MessageScrollerProvider
+              autoScroll={follow}
+              scrollEdgeThreshold={64}
+              defaultScrollPosition="end"
+              key={incarnationKey}
+            >
+              <MessageScroller>
+                <MessageScrollerViewport
+                  id={viewportId}
+                  tabIndex={0}
+                  aria-label={label}
+                >
+                  <MessageScrollerContent className="chat-transcript">
+                    {header}
+                    {blocks.length === 0 ? empty : null}
+                    {blocks.map((block) => (
+                      <TranscriptItem key={block.id} block={block} />
+                    ))}
+                    {footer}
+                  </MessageScrollerContent>
+                </MessageScrollerViewport>
+                <TranscriptFollow
+                  messages={visibleMessages}
+                  follow={follow}
+                  showJumpToLatest={showJumpToLatest}
+                />
+              </MessageScroller>
+            </MessageScrollerProvider>
+          )}
+        </TooltipProvider>
+      </DisclosureStateProvider>
     </div>
   )
 }

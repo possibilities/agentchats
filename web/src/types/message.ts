@@ -36,6 +36,8 @@ export interface Message {
   /** Omit when the source does not report a timestamp. */
   createdAt?: string
   status: MessageStatus
+  /** Host-owned delivery text for optimistic Human input; omit after reconciliation. */
+  deliveryStatus?: string
   toolActivity?: ToolActivity
   fileChanges?: FileChange[]
   /** Optional user/assistant body interpretation; content remains the original record. */
