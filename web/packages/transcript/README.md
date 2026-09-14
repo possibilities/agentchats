@@ -397,3 +397,7 @@ is independent of voice attachment and action pending state. Explicit false
 suppresses stale working activity; it does not change action or draft policy.
 Omitting the prop preserves the generic idle treatment. Status has accessible
 text, and reduced motion keeps working still with unchanged geometry.
+
+Voice inspection uses a square dialog with an accessible title and an inset
+trigger, without a redundant comparison hint. Native form controls explicitly
+inherit the transcript's monospace face.

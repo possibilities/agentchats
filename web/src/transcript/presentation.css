@@ -980,7 +980,7 @@
   position: relative;
 }
 .voice-message [data-slot="message-header"] {
-  padding-right: 36px;
+  padding-right: 56px;
 }
 .voice-message-modal__trigger,
 .voice-message-modal__close {
@@ -997,8 +997,8 @@
 }
 .voice-message-modal__trigger {
   position: absolute;
-  top: 0;
-  right: 0;
+  top: 8px;
+  right: 8px;
 }
 .voice-message-modal__trigger:hover,
 .voice-message-modal__close:hover {
@@ -1028,7 +1028,7 @@
   transform: translate(-50%, -50%);
   overflow: hidden;
   border: 1px solid var(--line);
-  border-radius: var(--radius);
+  border-radius: 0;
   color: var(--text);
   background: var(--field);
   box-shadow: 0 24px 80px rgb(0 0 0 / 0.45);
@@ -1101,10 +1101,15 @@
     height: 44px;
   }
   .voice-message-modal__trigger {
-    top: -8px;
-    right: -8px;
+    top: 8px;
+    right: 8px;
   }
   .voice-message [data-slot="message-header"] {
-    padding-right: 44px;
+    padding-right: 64px;
   }
+}
+
+/* Native form controls otherwise may retain the browser's sans-serif default. */
+:scope.agentchats-transcript :is(button, input, select, textarea, optgroup) {
+  font-family: var(--font-mono);
 }

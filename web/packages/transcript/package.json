@@ -1,6 +1,6 @@
 {
   "name": "@agentchats/transcript",
-  "version": "0.3.10",
+  "version": "0.3.11",
   "description": "Composable Human / Agent transcripts, live sources, and React blocks",
   "type": "module",
   "license": "MIT",

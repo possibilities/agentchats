@@ -49,9 +49,6 @@ export function VoiceMessageModal({
               <Dialog.Title className="voice-message-modal__title">
                 Voice message details
               </Dialog.Title>
-              <Dialog.Description className="voice-message-modal__description">
-                Compare the displayed handoff with its voice context and source.
-              </Dialog.Description>
             </div>
             <Dialog.Close
               className="voice-message-modal__close"
