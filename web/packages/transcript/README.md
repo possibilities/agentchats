@@ -23,7 +23,7 @@ it (for example, `import '@fontsource-variable/geist-mono'`). Otherwise the syst
 monospace stack is used. The stylesheet does not download fonts or restyle the host.
 Pierre loads only when a file diff opens. Raw HTML in Markdown is not rendered.
 
-The 0.3.3 presentation puts Human input and Agent replies on the same left edge,
+The 0.3.4 presentation puts Human input and Agent replies on the same left edge,
 using a flat inset for Human input and open space for replies. Reading text is
 18px with 28px leading, message gaps are 24px (20px in narrow lanes), and prose
 is capped at 80ch.

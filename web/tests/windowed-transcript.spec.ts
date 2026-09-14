@@ -10,6 +10,24 @@ const bottomGap = (element: HTMLElement) =>
 const startReading = (scroller: Locator) =>
   scroller.dispatchEvent("wheel", { deltaY: -1 })
 
+const visibleRowAnchor = (scroller: Locator) =>
+  scroller.evaluate((element) => {
+    const viewportBounds = element.getBoundingClientRect()
+    const visible = [...element.querySelectorAll<HTMLElement>("[data-windowed-row-key]")]
+      .map((row) => ({ row, bounds: row.getBoundingClientRect() }))
+      .filter(
+        ({ bounds }) =>
+          bounds.bottom > viewportBounds.top && bounds.top < viewportBounds.bottom,
+      )
+      .sort((left, right) => left.bounds.top - right.bounds.top)[0]
+    return visible
+      ? {
+          key: visible.row.dataset.windowedRowKey!,
+          top: visible.bounds.top,
+        }
+      : null
+  })
+
 test.beforeEach(async ({ page }) => {
   await page.goto("/tests/windowed-consumer.html")
   await expect(page.locator('[data-block-id="row-1999"]')).toBeVisible()
@@ -39,21 +57,23 @@ test("anchors prepends and counts only newly introduced message IDs", async ({
   page,
 }) => {
   const scroller = page.locator(viewport)
-  await scroller.evaluate((element) => {
-    element.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: -1 }))
-    element.scrollTo({ top: element.scrollHeight / 2 })
-  })
+  await scroller.hover()
+  await page.mouse.wheel(0, -720)
   await expect(page.getByRole("button", { name: "Jump to latest", exact: true })).toBeVisible()
+  await scroller.evaluate((element) => element.scrollTo({ top: element.scrollHeight / 2 }))
+  await page.evaluate(
+    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+  )
 
   const anchor = await scroller.evaluate((element) => {
     const bounds = element.getBoundingClientRect()
-    const row = [...element.querySelectorAll<HTMLElement>("[data-windowed-row]")]
+    const row = [...element.querySelectorAll<HTMLElement>("[data-windowed-row-key]")]
       .find((candidate) => candidate.getBoundingClientRect().bottom > bounds.top)!
-    return { id: row.dataset.blockId!, top: row.getBoundingClientRect().top }
+    return { key: row.dataset.windowedRowKey!, top: row.getBoundingClientRect().top }
   })
 
   await page.evaluate(() => (window as any).windowedTranscript.prepend(100))
-  const anchored = page.locator(`[data-block-id="${anchor.id}"]`)
+  const anchored = page.locator(`[data-windowed-row-key="${anchor.key}"]`)
   await expect(anchored).toBeVisible()
   await expect.poll(async () =>
     Math.abs((await anchored.boundingBox())!.y - anchor.top),
@@ -143,18 +163,19 @@ test("keeps the end pinned across viewport shrink and preserves an away reader",
 
   await page.evaluate(() => (window as any).windowedTranscript.setDockHeight(0))
   await expect.poll(() => scroller.evaluate(bottomGap)).toBeLessThan(2)
-  await startReading(scroller)
-  await scroller.evaluate((element) => element.scrollTo({ top: element.scrollHeight / 2 }))
+  await scroller.hover()
+  await page.mouse.wheel(0, -720)
   await expect(page.getByRole("button", { name: "Jump to latest", exact: true })).toBeVisible()
-  const anchor = await scroller.evaluate((element) => {
-    const viewportBounds = element.getBoundingClientRect()
-    const row = [...element.querySelectorAll<HTMLElement>("[data-windowed-row]")]
-      .find((candidate) => candidate.getBoundingClientRect().bottom > viewportBounds.top)!
-    return { id: row.dataset.blockId!, top: row.getBoundingClientRect().top }
-  })
+  await scroller.evaluate((element) => element.scrollTo({ top: element.scrollHeight / 2 }))
+  await page.evaluate(
+    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+  )
+  await page.waitForTimeout(250)
+  await expect.poll(() => visibleRowAnchor(scroller)).not.toBeNull()
+  const anchor = (await visibleRowAnchor(scroller))!
 
   await page.evaluate(() => (window as any).windowedTranscript.setDockHeight(250))
-  const anchored = page.locator(`[data-block-id="${anchor.id}"]`)
+  const anchored = page.locator(`[data-windowed-row-key="${anchor.key}"]`)
   await expect(anchored).toBeVisible()
   await expect.poll(async () =>
     Math.abs((await anchored.boundingBox())!.y - anchor.top),

@@ -67,13 +67,23 @@ function captureReadingAnchor(element: HTMLElement): ReadingAnchor | null {
 }
 
 function restoreReadingAnchor(element: HTMLElement, anchor: ReadingAnchor) {
-  const viewportTop = element.getBoundingClientRect().top
+  const viewportBounds = element.getBoundingClientRect()
   const rendered = element.querySelectorAll<HTMLElement>(
     "[data-windowed-row-key]",
   )
   for (const row of rendered) {
     if (row.dataset.windowedRowKey !== anchor.key) continue
-    element.scrollTop += row.getBoundingClientRect().top - viewportTop - anchor.offset
+    const rowBounds = row.getBoundingClientRect()
+    // Direct DOM updates can leave a keyed node mounted at its old transform
+    // for one frame after indexes shift. It is not a usable anchor until the
+    // virtualizer positions it back in the viewport.
+    if (
+      rowBounds.bottom <= viewportBounds.top ||
+      rowBounds.top >= viewportBounds.bottom
+    ) {
+      return false
+    }
+    element.scrollTop += rowBounds.top - viewportBounds.top - anchor.offset
     return true
   }
   return false
@@ -164,13 +174,16 @@ export function WindowedTranscript<T extends { id: string }>({
   const keysChanged =
     rowKeys.length !== priorRowKeysRef.current.length ||
     rowKeys.some((key, index) => key !== priorRowKeysRef.current[index])
-  if (
-    keysChanged &&
-    awayRef.current &&
-    anchorRef.current &&
-    rowKeys.includes(anchorRef.current.key)
-  ) {
-    restoringAnchorRef.current = true
+  if (keysChanged && awayRef.current && !restoringAnchorRef.current) {
+    // Read the bounded mounted window before React commits the new keyed rows.
+    // A queued scroll/measurement capture may be one layout frame behind.
+    const currentAnchor = viewportRef.current
+      ? captureReadingAnchor(viewportRef.current)
+      : anchorRef.current
+    if (currentAnchor && rowKeys.includes(currentAnchor.key)) {
+      anchorRef.current = currentAnchor
+      restoringAnchorRef.current = true
+    }
   }
 
   const getItemKey = useCallback(
@@ -417,23 +430,34 @@ export function WindowedTranscript<T extends { id: string }>({
 
     const anchor = anchorRef.current
     if (restoringAnchorRef.current && anchor) {
+      if (restoreFrameRef.current != null) return
       const index = rowKeys.indexOf(anchor.key)
-      const offset = index < 0 ? undefined : virtualizer.getOffsetForIndex(index, "start")
-      if (offset) {
+      const seekAnchor = () => {
+        const offset =
+          index < 0 ? undefined : virtualizer.getOffsetForIndex(index, "start")
+        if (!offset) return
         virtualizer.scrollToOffset(offset[0] - anchor.offset, {
           align: "start",
           behavior: "auto",
         })
       }
+      seekAnchor()
       let attempts = 0
       let stableFrames = 0
+      let mountedAnchorFound = false
       const settleAnchor = () => {
         attempts++
         const element = viewportRef.current
         if (!element) return
         const before = element.scrollTop
         const found = restoreReadingAnchor(element, anchor)
+        mountedAnchorFound ||= found
         const correction = Math.abs(element.scrollTop - before)
+        // A prepend changes every following index. If the first estimated seek
+        // lands outside the mounted range, keep seeking the saved key while the
+        // virtualizer reconciles its new measurements; a DOM-only retry can
+        // never recover a row that was not mounted.
+        if (!found && !mountedAnchorFound) seekAnchor()
         stableFrames = found && correction < 1 ? stableFrames + 1 : 0
         if (attempts < 12 && stableFrames < 2) {
           restoreFrameRef.current = requestAnimationFrame(settleAnchor)
