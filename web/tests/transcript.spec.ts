@@ -256,6 +256,124 @@ test("windowed subagent lifecycle groups keep every detail reachable through pol
   await expect(followupTrigger).toBeVisible()
 })
 
+test("a windowed polled activity group paints and keeps both children accessible", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 615, height: 947 })
+  await page.goto("/tests/consumer.html?direct")
+  await page.locator(viewport).evaluate((element) => {
+    element.parentElement!.parentElement!.parentElement!.style.height = "930px"
+  })
+  const lead: Message = {
+    id: "agent-before",
+    role: "assistant",
+    content: "The unified header is ready for review.",
+    status: "complete",
+  }
+  const interaction = subagentMessage(
+    "interaction",
+    "interacted",
+    "/root/tool_output_recovery",
+  )
+  const command: Message = {
+    id: "command-after-interaction",
+    role: "tool",
+    content: "Updated the work status.",
+    status: "complete",
+    toolActivity: {
+      name: "Command",
+      detail: "agenthud apply --json …",
+      meta: "exit 0",
+      state: "complete",
+      sections: [{ label: "Output", content: "Work status updated." }],
+    },
+  }
+  const next: Message = {
+    id: "agent-after",
+    role: "assistant",
+    content: "Sent to Astra: one unified header replaces the individual panes.",
+    status: "complete",
+  }
+  await page.evaluate((messages) => {
+    const host = (window as any).directTranscript
+    host.setWindowed(true)
+    host.setDetail("full")
+    host.setMessages(messages)
+  }, [lead, interaction])
+
+  const interactionTrigger = page.locator(".tool-disclosure__trigger", {
+    hasText: "/root/tool_output_recovery",
+  })
+  await interactionTrigger.click()
+  await expect(interactionTrigger).toHaveAttribute("aria-expanded", "true")
+
+  await page.evaluate((messages) => {
+    ;(window as any).directTranscript.setMessages(messages)
+  }, [lead, interaction, command, next])
+  const group = page.locator(".activity-group__trigger")
+  await expect(group).toContainText("2 activities")
+  await expect(group).toHaveAttribute("aria-expanded", "true")
+  await expect(interactionTrigger).toHaveAttribute("aria-expanded", "true")
+
+  const commandTrigger = page.locator(".tool-disclosure__trigger", {
+    hasText: "agenthud apply",
+  })
+  await expect(commandTrigger).toBeVisible()
+  const children = page.locator(".activity-group__items > *")
+  await expect(children).toHaveCount(2)
+  expect(
+    await children.evaluateAll((elements) =>
+      elements.map((element) => getComputedStyle(element).contentVisibility),
+    ),
+  ).toEqual(["visible", "visible"])
+  const overlap = await commandTrigger.evaluate((element) => {
+    const child = element.getBoundingClientRect()
+    const group = document
+      .querySelector(".activity-group__trigger")!
+      .getBoundingClientRect()
+    return Math.max(
+      0,
+      Math.min(child.bottom, group.bottom) - Math.max(child.top, group.top),
+    )
+  })
+  expect(overlap).toBeLessThan(1)
+  await commandTrigger.click()
+  await expect(commandTrigger).toHaveAttribute("aria-expanded", "true")
+  await expect(page.getByLabel("Output", { exact: true })).toHaveText(
+    "Work status updated.",
+  )
+
+  await interactionTrigger.scrollIntoViewIfNeeded()
+  await interactionTrigger.click()
+  await expect(interactionTrigger).toHaveAttribute("aria-expanded", "false")
+  await interactionTrigger.focus()
+  await interactionTrigger.press("Enter")
+  await expect(interactionTrigger).toHaveAttribute("aria-expanded", "true")
+  await expect(
+    page.getByLabel("Agent thread", { exact: true }).filter({
+      hasText: "thread-interaction",
+    }),
+  ).toBeVisible()
+
+  await page.evaluate((messages) => {
+    ;(window as any).directTranscript.setMessages(messages)
+  }, [
+    { ...lead },
+    { ...interaction },
+    { ...command },
+    { ...next },
+    {
+      id: "agent-poll",
+      role: "assistant",
+      content: "The next poll keeps both activity disclosures stable.",
+      status: "complete",
+    } satisfies Message,
+  ])
+  await expect(group).toHaveAttribute("aria-expanded", "true")
+  await expect(interactionTrigger).toHaveAttribute("aria-expanded", "true")
+  await expect(commandTrigger).toHaveAttribute("aria-expanded", "true")
+})
+
 test("Human delivery status is announced without changing the source body", async ({
   page,
 }) => {
