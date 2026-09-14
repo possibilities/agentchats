@@ -24,6 +24,9 @@ export default defineConfig({
   // Prebundle the lazy diff renderer too, so opening the first file in dev
   // cannot trigger a dependency-optimizer reload and discard disclosure state.
   optimizeDeps: {
+    // Browser fixtures consume the freshly built workspace package. Do not reuse
+    // a dependency-optimizer copy from a previous package version.
+    exclude: ["@agentchats/transcript"],
     include: [
       "@pierre/diffs",
       "@pierre/diffs/react",
@@ -32,8 +35,36 @@ export default defineConfig({
   },
   plugins: [readerLocalApi(), react(), tailwindcss()],
   resolve: {
-    alias: {
-      '@': path.resolve(import.meta.dirname, './src'),
-    },
+    alias: [
+      {
+        find: "@agentchats/transcript/react",
+        replacement: path.resolve(
+          import.meta.dirname,
+          "./packages/transcript/dist/react.js",
+        ),
+      },
+      {
+        find: "@agentchats/transcript/styles.css",
+        replacement: path.resolve(
+          import.meta.dirname,
+          "./packages/transcript/dist/styles.css",
+        ),
+      },
+      {
+        find: "@agentchats/transcript/codex",
+        replacement: path.resolve(
+          import.meta.dirname,
+          "./packages/transcript/dist/codex.js",
+        ),
+      },
+      {
+        find: /^@agentchats\/transcript$/,
+        replacement: path.resolve(
+          import.meta.dirname,
+          "./packages/transcript/dist/index.js",
+        ),
+      },
+      { find: "@", replacement: path.resolve(import.meta.dirname, "./src") },
+    ],
   },
 })

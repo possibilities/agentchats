@@ -94,7 +94,9 @@ test("active mode defaults to Steer, exposes Queue, and keeps Stop pending until
   await expect(
     page.getByRole("button", { name: "Stop Agent", exact: true }),
   ).toBeDisabled()
-  await expect(page.getByRole("status")).toContainText("Stopping…")
+  await expect(page.locator(".transcript-composer__status")).toContainText(
+    "Stopping…",
+  )
   await update(page, { active: false, stopping: false })
   await expect(
     page.getByRole("button", { name: "Send", exact: true }),
@@ -296,14 +298,12 @@ test("desktop-like composer and queue reflow on a narrow host without touching p
 })
 
 
-test("hosts without interrupt show passive progress and preserve steering and queue", async ({ page }) => {
+test("hosts without interrupt show the shared activity line and preserve steering and queue", async ({ page }) => {
   await update(page, { active: true, allowInterrupt: false })
-  const progress = page.locator(".transcript-composer__progress")
-  await expect(progress).toHaveText("Working…")
+  const progress = page.locator(".transcript-composer__activity-line")
   await expect(progress).toHaveAttribute("role", "status")
-  await expect(progress).not.toHaveAttribute("tabindex")
+  await expect(progress).toHaveAccessibleName("Agent is working")
   await expect(page.getByRole("button", { name: "Stop Agent" })).toHaveCount(0)
-  await progress.click()
   expect(await calls(page)).toEqual([])
   const input = page.getByRole("textbox", { name: "Message Agent", exact: true })
   await input.fill("Continue in this direction")
@@ -332,13 +332,9 @@ test("host Send mode stays stable and preserves a newer draft across optimistic 
   const send = page.getByRole("button", { name: "Send", exact: true })
   await expect(send).toBeDisabled()
   await expect(page.getByRole("button", { name: "Stop Agent" })).toHaveCount(0)
-  const working = page.getByRole("status", { name: "" }).filter({ hasText: "Working" })
-  await expect(working).toHaveText("Working")
-  expect(
-    await working.evaluate((element) =>
-      Boolean(element.closest('[data-slot="input-group-addon"]')),
-    ),
-  ).toBe(false)
+  const working = page.locator(".transcript-composer__activity-line")
+  await expect(working).toHaveAccessibleName("Agent is working")
+  await expect(page.getByText("Working", { exact: true })).toHaveCount(0)
   await input.fill("First submitted draft")
   await page.evaluate(() => {
     ;(window as any).composerHost.delay = true

@@ -23,7 +23,7 @@ it (for example, `import '@fontsource-variable/geist-mono'`). Otherwise the syst
 monospace stack is used. The stylesheet does not download fonts or restyle the host.
 Pierre loads only when a file diff opens. Raw HTML in Markdown is not rendered.
 
-The 0.3.4 presentation puts Human input and Agent replies on the same left edge,
+The 0.3.5 presentation puts Human input and Agent replies on the same left edge,
 using a flat inset for Human input and open space for replies. Reading text is
 18px with 28px leading, message gaps are 24px (20px in narrow lanes), and prose
 is capped at 80ch.
@@ -155,8 +155,11 @@ import { Transcript, TranscriptComposer } from '@agentchats/transcript/react'
     pending={requestPending}
     stopping={awaitingInterruptedTurn}
     disabled={!connected}
+    actionsDisabled={reconnecting}
     alwaysShowSend
     optimisticSubmit
+    persistenceScope={workspaceThreadLaneKey}
+    observedSubmissionIds={reconciledClientIds}
     onSend={(text, submission) => startTurn(text, submission.clientId)}
     onSteer={steerCurrentTurn}
     onQueue={enqueueFollowUp}
@@ -173,10 +176,12 @@ import { Transcript, TranscriptComposer } from '@agentchats/transcript/react'
 
 Callbacks return `void | Promise<void>`. The component awaits acceptance,
 prevents duplicate requests, preserves rejected drafts, and shows the rejection's
-message. There are no automatic retries. Use `transcriptId` for the host's view
-incarnation, not just a reusable display title; changing it clears local drafts,
-errors and editing state. Hosts still fence all transport and queue updates to
-the exact session/turn and view that accepted the action.
+message. There are no automatic retries. Without `persistenceScope`, use
+`transcriptId` for the host's view incarnation; changing it clears local drafts,
+errors and editing state. With persistence enabled, transient `transcriptId`
+changes retain entry data and the host must change the stable scope for a real
+thread or lane replacement. Hosts still fence transport and queue updates to the
+exact session, turn, and view that accepted the action.
 
 Idle submit is **Send**. While `active`, submit is **Steer** or **Queue**, selected
 in the menu. `followUpMode` optionally controls that setting, with
@@ -187,19 +192,21 @@ mode. IME composition does not submit. `placeholder`, `defaultValue`, `className
 and `aria-label` are optional; the default label is **Message Agent**.
 
 An empty active composer shows **Stop** when `onInterrupt` is supplied. Without
-that callback it shows a noninteractive **Working…** status, preserving follow-up
-input. Keep
-`stopping` true after the interrupt acknowledgment until the terminal event.
+that callback, the shared activity divider conveys ongoing work while preserving
+follow-up input. Keep `stopping` true after the interrupt acknowledgment until
+the terminal event.
 `pending` describes an in-flight host request; `active` describes running agent
 work. Active work permits further input; pending/stopping prevent duplicate
-operations. Hosts can independently disable the whole surface when unavailable.
+operations. `actionsDisabled` disables host actions while keeping the draft
+writable during reconnect. `disabled` disables the whole field.
 
 `alwaysShowSend` is an opt-in host layout. It keeps the **Send** control in the
 same bottom-right position for idle, active, empty, and pending states, disables
 it when no action is available, and never substitutes Stop. While active, the
-separate upper-right **Working** status remains still and the follow-up selector
-continues to choose the steer or queue callback even though the action label
-stays **Send**.
+full-width activity divider reports **Agent is working** to assistive technology;
+reduced-motion preferences replace its indeterminate movement with a still accent
+line. The follow-up selector continues to choose the steer or queue callback even
+though the action label stays **Send**.
 
 `optimisticSubmit` clears the submitted draft before awaiting its callback and
 keeps the textarea writable while the action remains disabled. Every send
@@ -210,6 +217,24 @@ another draft, the error retains the submitted text with **Restore sent text**,
 which appends it without overwriting the new draft. Each additional failure is
 retained separately until the person restores or dismisses it; a later submit
 never silently discards earlier text. Recovery never retries delivery.
+
+`persistenceScope` enables best-effort browser recovery for the main draft, local
+steer/queue choice, failed-submission recovery, submitted text awaiting exact
+reconciliation, and queued-edit text plus the saved main draft. Supply one stable
+opaque workspace + thread + lane identity per mounted composer; do not derive it
+from a reader view UUID. Pass native client IDs already observed in the transcript
+through `observedSubmissionIds`. Exact matches remove pending or recovered text
+without clearing a newer draft.
+
+Pending text restored after a reload is shown as delivery unknown and is never
+resent automatically. Browser storage can be unavailable, full, evicted, or
+cleared; the composer keeps working and reports that durable recovery is
+unavailable. Typing writes are batched and critical transitions flush
+immediately. Tabs use separate storage slots. When a newly created browser
+session finds another slot, its text is offered as an explicit recovery instead
+of copied into the active draft. Some browsers clone session storage when a tab
+is duplicated; those two tabs can share a slot, where the latest write wins.
+Separately, hosts should mount only one composer for a scope in each document.
 
 `queue` is a host-owned ordered array of `TranscriptQueuedMessage`:
 `{ id, text, pausedReason?, disabled?, canSteer?, canResume? }`. Hosts dispatch one
@@ -223,7 +248,8 @@ the host should pause/exclude that row from dispatch and reject a raced already-
 sent row. Saving calls `onEditQueued(id, text)` to update the original queue
 position, then awaits `onEditingQueuedChange(null)`. Cancel only releases editing
 and restores the draft that was present before editing. Rejections keep the edit
-available. See [ADR 0004](../../../docs/adr/0004-host-owned-agent-interaction.md)
+available. A restored edit rechecks the host hold before Save; Cancel and a
+successful Save release it. See [ADR 0004](../../../docs/adr/0004-host-owned-agent-interaction.md)
 in the source repository for the Codex desktop and app-server evidence.
 
 ## Live sources

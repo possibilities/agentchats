@@ -489,11 +489,60 @@
 
 .transcript-composer,
 :scope.transcript-composer {
+  --transcript-composer-divider: var(--line);
+  --transcript-composer-progress: var(--accent);
   position: relative;
   flex: none;
   min-width: 0;
   width: 100%;
   container: transcript / inline-size;
+}
+.transcript-composer__activity-line {
+  position: absolute;
+  z-index: 1;
+  top: -1px;
+  right: 0;
+  left: 0;
+  height: 2px;
+  overflow: hidden;
+  pointer-events: none;
+  background: var(--transcript-composer-divider);
+}
+.transcript-composer__activity-line::after {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 20%;
+  content: "";
+  opacity: 0;
+  background: var(--transcript-composer-progress);
+  transform: translate3d(-100%, 0, 0);
+}
+.transcript-composer__activity-line[data-active="true"]::after {
+  opacity: 1;
+  animation: transcript-composer-progress 1.4s linear infinite;
+}
+@keyframes transcript-composer-progress {
+  from { transform: translate3d(-100%, 0, 0); }
+  to { transform: translate3d(500%, 0, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .transcript-composer__activity-line[data-active="true"]::after {
+    right: 0;
+    width: auto;
+    animation: none;
+    transform: none;
+  }
+}
+.transcript-composer__activity-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  white-space: nowrap;
+  border: 0;
+  clip: rect(0, 0, 0, 0);
 }
 .transcript-composer__content {
   width: min(100%, var(--transcript-column));
@@ -544,29 +593,8 @@
   color: var(--muted);
   font-size: 13px;
 }
-.transcript-composer__working {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  color: var(--muted);
-  font-size: 13px;
-  line-height: 20px;
-}
 .transcript-composer__mode {
   margin-inline-start: -7px;
-}
-.transcript-composer__progress {
-  display: inline-flex;
-  align-items: center;
-  min-height: 44px;
-  color: var(--muted);
-  font-size: 13px;
-  font-weight: 400;
-  gap: 8px;
-}
-.transcript-composer__progress svg {
-  width: 16px;
-  height: 16px;
 }
 .transcript-composer__error,
 .transcript-queue__reason {

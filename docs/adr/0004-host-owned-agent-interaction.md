@@ -76,6 +76,34 @@ remains available until the person explicitly restores or dismisses it. The prov
 `deliveryStatus` message field lets the host describe an optimistic Human row
 until that same client ID reconciles with the transcript source.
 
+## Durable composer amendment (2026-09-14)
+
+Hosts can opt into browser recovery with a stable opaque `persistenceScope` for
+one workspace, thread, and lane. This identity is independent of transient reader
+incarnations. The shared composer retains the main draft, local follow-up mode,
+failed-submission recoveries, submitted text awaiting an authoritative echo, and
+the current queued edit plus its saved main draft. `observedSubmissionIds`
+removes only exact reconciled client IDs. A restored pending submission becomes
+an explicit delivery-unknown recovery and is never sent automatically.
+
+Browser storage is best effort. Security policy, quota, eviction, and manual
+clearing can prevent recovery; the composer reports storage failure while keeping
+the current in-memory text and allowing an authorized send. Writes are batched
+during typing and flushed for submission and page hiding. Each tab writes a
+separate slot. A new browser session exposes text from another slot as a recovery
+instead of silently replacing its own draft. One mounted composer owns a scope
+within a document. Hosts must supply distinct lane scopes.
+
+A queued edit restored after a full reload rechecks the row hold through
+`onEditingQueuedChange(id)` before Save. Cancel and successful Save release the
+host hold with `onEditingQueuedChange(null)`. `actionsDisabled` gates transport
+and queue controls during reconnect while leaving the textarea writable;
+`disabled` retains the stronger whole-field behavior.
+
+Visible Working copy is replaced by an accessible full-width activity divider at
+the composer boundary. It occupies no layout height, animates only while active,
+and becomes a still accent line under reduced-motion preference.
+
 ## Consequences
 
 Agentvoice wires native app-server transport and exact thread/turn identity.

@@ -1,5 +1,5 @@
-import { useId, useRef, useState } from "react"
-import { ArrowUpIcon, ChevronDownIcon, LoaderCircleIcon, SquareIcon } from "lucide-react"
+import { useEffect, useId, useRef, useState } from "react"
+import { ArrowUpIcon, ChevronDownIcon, SquareIcon } from "lucide-react"
 import { cn } from "cn"
 import { Button } from "../components/ui/button"
 import {
@@ -17,6 +17,15 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "../components/ui/dropdown-menu"
+import {
+  cacheComposerState,
+  composerPageId,
+  loadComposerState,
+  type PersistedComposerEditing,
+  type PersistedComposerRecovery,
+  type PersistedComposerState,
+  writeComposerState,
+} from "./composer-persistence"
 
 export type TranscriptFollowUpMode = "steer" | "queue"
 type ActionResult = void | Promise<void>
@@ -28,6 +37,12 @@ export interface TranscriptSubmission {
 }
 
 let submissionSequence = 0
+const persistenceOwners = new Map<string, string>()
+const STORAGE_ERROR =
+  "Browser storage is unavailable. Your draft remains here but may not survive a reload."
+const STORAGE_SUBMIT_ERROR =
+  "Browser storage is unavailable. This message may not be recoverable after a reload."
+const EMPTY_SUBMISSION_IDS: readonly string[] = []
 
 function createSubmissionClientId() {
   return globalThis.crypto?.randomUUID?.() ??
@@ -44,7 +59,7 @@ export interface TranscriptQueuedMessage {
 }
 
 export interface TranscriptComposerProps {
-  /** Change with the host's view incarnation to reset drafts and in-flight UI. */
+  /** Change with the host's view incarnation; resets local state when persistence is off. */
   transcriptId: string
   /** An agent turn is running. This does not disable entering follow-ups. */
   active?: boolean
@@ -52,11 +67,17 @@ export interface TranscriptComposerProps {
   pending?: boolean
   /** Keep true after interrupt acknowledgment until the terminal turn event. */
   stopping?: boolean
+  /** Disable actions while retaining a writable draft, for example during reconnect. */
+  actionsDisabled?: boolean
   disabled?: boolean
   /** Keep one Send action visible through active and pending host states. */
   alwaysShowSend?: boolean
   /** Clear accepted input before awaiting the callback and retain explicit failure recovery. */
   optimisticSubmit?: boolean
+  /** Stable opaque workspace + thread + lane identity for browser draft recovery. */
+  persistenceScope?: string
+  /** Exact client IDs already present in the authoritative transcript. */
+  observedSubmissionIds?: readonly string[]
   /** Defaults to the Codex desktop setting, steer. */
   followUpMode?: TranscriptFollowUpMode
   onFollowUpModeChange?: (mode: TranscriptFollowUpMode) => void
@@ -82,16 +103,22 @@ export interface TranscriptComposerProps {
 
 /** Desktop-style Agent input. Hosts own queue state, transport and turn identity. */
 export function TranscriptComposer(props: TranscriptComposerProps) {
-  return <Composer key={props.transcriptId} {...props} />
+  const key = props.persistenceScope
+    ? `persistent:${props.persistenceScope}`
+    : props.transcriptId
+  return <Composer key={key} {...props} />
 }
 
 function Composer({
   active = false,
   pending = false,
   stopping = false,
+  actionsDisabled = false,
   disabled = false,
   alwaysShowSend = false,
   optimisticSubmit = false,
+  persistenceScope,
+  observedSubmissionIds = EMPTY_SUBMISSION_IDS,
   followUpMode,
   onFollowUpModeChange,
   onSend,
@@ -109,24 +136,41 @@ function Composer({
   className,
   "aria-label": label = "Message Agent",
 }: TranscriptComposerProps) {
+  const ownerId = useState(() => createSubmissionClientId())[0]
+  const loaded = useState(() =>
+    loadComposerState(
+      persistenceScope,
+      defaultValue,
+      observedSubmissionIds,
+    ),
+  )[0]
   const inputId = useId()
   const input = useRef<HTMLTextAreaElement>(null)
   const locked = useRef(false)
-  const draftRef = useRef(defaultValue)
-  const [draft, setDraft] = useState(defaultValue)
-  const [localMode, setLocalMode] = useState<TranscriptFollowUpMode>("steer")
+  const persisted = useRef<PersistedComposerState>(loaded.state)
+  const persistenceTimer = useRef<number | null>(null)
+  const persistenceDirty = useRef(loaded.changed)
+  const initialEditing = loaded.state.editing
+  const draftRef = useRef(initialEditing?.text ?? loaded.state.draft)
+  const [draft, setDraft] = useState(initialEditing?.text ?? loaded.state.draft)
+  const [localMode, setLocalMode] = useState<TranscriptFollowUpMode>(
+    loaded.state.followUpMode,
+  )
   const [operation, setOperation] = useState<string | null>(null)
   const [submissionPending, setSubmissionPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [recoveries, setRecoveries] = useState<
-    Array<{ clientId: string; text: string; error: string }>
-  >([])
-  const [editing, setEditing] = useState<{
-    id: string
-    savedDraft: string
-  } | null>(null)
+  const [storageWarning, setStorageWarning] = useState<string | null>(
+    loaded.storageAvailable ? null : STORAGE_ERROR,
+  )
+  const recoveriesRef = useRef(loaded.state.recoveries)
+  const [recoveries, setRecoveries] = useState(loaded.state.recoveries)
+  const editingRef = useRef<PersistedComposerEditing | null>(initialEditing)
+  const [editing, setEditing] =
+    useState<PersistedComposerEditing | null>(initialEditing)
+  const observedIdsRef = useRef(new Set(observedSubmissionIds))
   const mode = followUpMode ?? localMode
-  const unavailable = disabled || pending || operation !== null || stopping
+  const unavailable =
+    disabled || actionsDisabled || pending || operation !== null || stopping
   const editedRow = editing ? queue.find((row) => row.id === editing.id) : null
   const action = !active ? onSend : mode === "steer" ? onSteer : onQueue
   const actionLabel = editing
@@ -145,9 +189,126 @@ function Composer({
   const showStop =
     !alwaysShowSend && !editing && active && draft.trim().length === 0
 
-  function updateDraft(value: string) {
+  function ownsPersistence() {
+    if (!persistenceScope) return true
+    const owner = persistenceOwners.get(persistenceScope)
+    return owner === undefined || owner === ownerId
+  }
+
+  function flushPersistence() {
+    if (persistenceTimer.current !== null && typeof window !== "undefined") {
+      window.clearTimeout(persistenceTimer.current)
+      persistenceTimer.current = null
+    }
+    if (!persistenceDirty.current || !ownsPersistence()) return true
+    const written = writeComposerState(persistenceScope, persisted.current)
+    if (written) {
+      persistenceDirty.current = false
+      setStorageWarning(null)
+    }
+    return written
+  }
+
+  function updatePersistence(
+    update: (current: PersistedComposerState) => PersistedComposerState,
+    immediate = false,
+  ) {
+    persisted.current = update(persisted.current)
+    persistenceDirty.current = true
+    if (!persistenceScope || !ownsPersistence()) return true
+    cacheComposerState(persistenceScope, persisted.current)
+    if (immediate) {
+      const written = flushPersistence()
+      if (!written) setStorageWarning(STORAGE_ERROR)
+      return written
+    }
+    if (persistenceTimer.current === null && typeof window !== "undefined")
+      persistenceTimer.current = window.setTimeout(() => {
+        if (!flushPersistence()) setStorageWarning(STORAGE_ERROR)
+      }, 120)
+    return true
+  }
+
+  useEffect(() => {
+    if (!persistenceScope) return
+    persistenceOwners.set(persistenceScope, ownerId)
+    if (!flushPersistence()) setStorageWarning(STORAGE_ERROR)
+    const flushOnPageHide = () => {
+      if (!flushPersistence()) setStorageWarning(STORAGE_ERROR)
+    }
+    const flushWhenHidden = () => {
+      if (document.visibilityState === "hidden") flushOnPageHide()
+    }
+    window.addEventListener("pagehide", flushOnPageHide)
+    document.addEventListener("visibilitychange", flushWhenHidden)
+    return () => {
+      flushPersistence()
+      window.removeEventListener("pagehide", flushOnPageHide)
+      document.removeEventListener("visibilitychange", flushWhenHidden)
+      if (persistenceOwners.get(persistenceScope) === ownerId)
+        persistenceOwners.set(persistenceScope, `unmounted:${ownerId}`)
+    }
+  }, [ownerId, persistenceScope])
+
+  useEffect(() => {
+    observedIdsRef.current = new Set(observedSubmissionIds)
+    if (observedSubmissionIds.length === 0) return
+    const observed = observedIdsRef.current
+    const nextRecoveries = recoveriesRef.current.filter(
+      (entry) => !observed.has(entry.clientId),
+    )
+    const nextPending = persisted.current.pending.filter(
+      (entry) => !observed.has(entry.clientId),
+    )
+    if (
+      nextRecoveries.length === recoveriesRef.current.length &&
+      nextPending.length === persisted.current.pending.length
+    )
+      return
+    recoveriesRef.current = nextRecoveries
+    setRecoveries(nextRecoveries)
+    updatePersistence(
+      (current) => ({
+        ...current,
+        recoveries: nextRecoveries,
+        pending: nextPending,
+      }),
+      true,
+    )
+  }, [observedSubmissionIds])
+
+  function updateDraft(value: string, immediate = false) {
     draftRef.current = value
     setDraft(value)
+    updatePersistence(
+      (current) =>
+        editingRef.current
+          ? {
+              ...current,
+              editing: { ...editingRef.current, text: value },
+            }
+          : { ...current, draft: value },
+      immediate,
+    )
+  }
+
+  function updateRecoveries(
+    update: (current: PersistedComposerRecovery[]) => PersistedComposerRecovery[],
+    immediate = false,
+  ) {
+    const next = update(recoveriesRef.current)
+    recoveriesRef.current = next
+    setRecoveries(next)
+    updatePersistence((current) => ({ ...current, recoveries: next }), immediate)
+  }
+
+  function updateEditing(
+    next: PersistedComposerEditing | null,
+    immediate = false,
+  ) {
+    editingRef.current = next
+    setEditing(next)
+    updatePersistence((current) => ({ ...current, editing: next }), immediate)
   }
 
   function failureMessage(cause: unknown) {
@@ -167,7 +328,7 @@ function Composer({
     setError(null)
     try {
       await callback()
-      await accepted?.()
+      if (ownsPersistence()) await accepted?.()
     } catch (cause) {
       setError(failureMessage(cause))
     } finally {
@@ -183,31 +344,60 @@ function Composer({
     submission: TranscriptSubmission,
   ) {
     if (locked.current || unavailable) return
+    const pendingSubmission = {
+      ...submission,
+      text,
+      pageId: composerPageId,
+    }
+    const durable = updatePersistence(
+      (current) => ({
+        ...current,
+        draft: optimisticSubmit ? "" : current.draft,
+        pending: [...current.pending, pendingSubmission],
+      }),
+      true,
+    )
+    if (!durable) {
+      setStorageWarning(STORAGE_SUBMIT_ERROR)
+    }
     locked.current = true
     setOperation(name)
     setSubmissionPending(true)
     setError(null)
     if (optimisticSubmit) {
-      updateDraft("")
+      draftRef.current = ""
+      setDraft("")
       input.current?.focus()
     }
     try {
       await callback()
-      if (!optimisticSubmit) {
-        updateDraft("")
+      if (!optimisticSubmit && ownsPersistence()) {
+        updateDraft("", true)
         input.current?.focus()
       }
     } catch (cause) {
+      if (!ownsPersistence()) return
+      const observed = observedIdsRef.current.has(submission.clientId)
+      updatePersistence(
+        (current) => ({
+          ...current,
+          pending: current.pending.filter(
+            (entry) => entry.clientId !== submission.clientId,
+          ),
+        }),
+        true,
+      )
+      if (observed) return
       const message = failureMessage(cause)
       if (optimisticSubmit) {
         if (draftRef.current.length === 0) {
-          updateDraft(text)
+          updateDraft(text, true)
           setError(message)
         } else {
-          setRecoveries((current) => [
+          updateRecoveries((current) => [
             ...current,
             { clientId: submission.clientId, text, error: message },
-          ])
+          ], true)
         }
       } else setError(message)
     } finally {
@@ -218,10 +408,12 @@ function Composer({
   }
 
   async function finishEditing() {
-    if (!editing) return
+    const current = editingRef.current
+    if (!current) return
     await onEditingQueuedChange?.(null)
-    updateDraft(editing.savedDraft)
-    setEditing(null)
+    if (!ownsPersistence()) return
+    updateEditing(null)
+    updateDraft(current.savedDraft, true)
     input.current?.focus()
   }
 
@@ -229,7 +421,21 @@ function Composer({
     if (!canSubmit) return
     const text = draft.trim()
     if (editing && onEditQueued) {
-      void run("Saving…", () => onEditQueued(editing.id, text), finishEditing)
+      const editState = editing
+      void run(
+        "Saving…",
+        async () => {
+          if (editState.pageId !== composerPageId) {
+            if (!onEditingQueuedChange)
+              throw new Error("Reopen this queued edit before saving it.")
+            await onEditingQueuedChange(editState.id)
+            if (!ownsPersistence()) return
+            updateEditing({ ...editState, pageId: composerPageId }, true)
+          }
+          await onEditQueued(editState.id, text)
+        },
+        finishEditing,
+      )
       return
     }
     const submitMode = invertMode ? (mode === "steer" ? "queue" : "steer") : mode
@@ -253,8 +459,14 @@ function Composer({
       "Opening edit…",
       () => onEditingQueuedChange?.(row.id),
       () => {
-        setEditing({ id: row.id, savedDraft: editing?.savedDraft ?? draft })
-        updateDraft(row.text)
+        const next = {
+          id: row.id,
+          text: row.text,
+          savedDraft: editingRef.current?.savedDraft ?? draftRef.current,
+          pageId: composerPageId,
+        }
+        updateEditing(next)
+        updateDraft(row.text, true)
         input.current?.focus()
       },
     )
@@ -265,11 +477,18 @@ function Composer({
       className={cn("agentchats-transcript transcript-composer", className)}
       data-always-show-send={alwaysShowSend || undefined}
     >
-      {alwaysShowSend && active ? (
-        <span className="transcript-composer__working" role="status">
-          Working
-        </span>
-      ) : null}
+      <div
+        className="transcript-composer__activity-line"
+        data-active={active || undefined}
+        role={active ? "status" : undefined}
+        aria-label={active ? "Agent is working" : undefined}
+      >
+        {active ? (
+          <span className="transcript-composer__activity-label">
+            Agent is working
+          </span>
+        ) : null}
+      </div>
       <div className="transcript-composer__content">
         {queue.length > 0 ? (
           <section className="transcript-queue" aria-label="Queued messages">
@@ -373,7 +592,9 @@ function Composer({
               id={inputId}
               aria-label={editing ? "Edit queued message" : label}
               aria-describedby={
-                error || recoveries.length > 0 ? `${inputId}-error` : undefined
+                error || storageWarning || recoveries.length > 0
+                  ? `${inputId}-error`
+                  : undefined
               }
               aria-invalid={Boolean(error || recoveries.length > 0)}
               placeholder={placeholder}
@@ -433,6 +654,13 @@ function Composer({
                         onValueChange={(value) => {
                           if (value !== "steer" && value !== "queue") return
                           setLocalMode(value)
+                          updatePersistence(
+                            (current) => ({
+                              ...current,
+                              followUpMode: value,
+                            }),
+                            true,
+                          )
                           onFollowUpModeChange?.(value)
                         }}
                       >
@@ -470,12 +698,8 @@ function Composer({
                   <ArrowUpIcon data-icon="inline-start" aria-hidden="true" />
                   {editing ? "Save queued message" : "Send"}
                 </InputGroupButton>
-              ) : (showStop || stopping) && !onInterrupt ? (
-                <span className="transcript-composer__progress" role="status">
-                  <LoaderCircleIcon aria-hidden="true" />
-                  {stopping ? "Stopping…" : "Working…"}
-                </span>
-              ) : showStop || stopping ? (
+              ) : (showStop || stopping) && !onInterrupt ? null : showStop ||
+                stopping ? (
                 <InputGroupButton
                   size="sm"
                   variant="secondary"
@@ -501,12 +725,13 @@ function Composer({
               )}
             </InputGroupAddon>
           </InputGroup>
-          {error || recoveries.length > 0 ? (
+          {error || storageWarning || recoveries.length > 0 ? (
             <div
               className="transcript-composer__error"
               id={`${inputId}-error`}
             >
               {error ? <p role="alert">{error}</p> : null}
+              {storageWarning ? <p role="alert">{storageWarning}</p> : null}
               {recoveries.map((recovery) => (
                 <div
                   className="transcript-composer__recovery"
@@ -523,16 +748,35 @@ function Composer({
                     type="button"
                     variant="ghost"
                     size="sm"
-                    onClick={() => {
-                      updateDraft(
+                  onClick={() => {
+                      const nextDraft =
                         draftRef.current.length > 0
                           ? `${draftRef.current}\n\n${recovery.text}`
-                          : recovery.text,
+                          : recovery.text
+                      draftRef.current = nextDraft
+                      setDraft(nextDraft)
+                      const nextRecoveries = recoveriesRef.current.filter(
+                        (entry) => entry.clientId !== recovery.clientId,
                       )
-                      setRecoveries((current) =>
-                        current.filter(
-                          (entry) => entry.clientId !== recovery.clientId,
-                        ),
+                      recoveriesRef.current = nextRecoveries
+                      setRecoveries(nextRecoveries)
+                      updatePersistence(
+                        (current) =>
+                          editingRef.current
+                            ? {
+                                ...current,
+                                editing: {
+                                  ...editingRef.current,
+                                  text: nextDraft,
+                                },
+                                recoveries: nextRecoveries,
+                              }
+                            : {
+                                ...current,
+                                draft: nextDraft,
+                                recoveries: nextRecoveries,
+                              },
+                        true,
                       )
                       input.current?.focus()
                     }}
@@ -544,10 +788,12 @@ function Composer({
                     variant="ghost"
                     size="sm"
                     onClick={() =>
-                      setRecoveries((current) =>
-                        current.filter(
-                          (entry) => entry.clientId !== recovery.clientId,
-                        ),
+                      updateRecoveries(
+                        (current) =>
+                          current.filter(
+                            (entry) => entry.clientId !== recovery.clientId,
+                          ),
+                        true,
                       )
                     }
                   >

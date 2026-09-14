@@ -1,4 +1,5 @@
 import { Children, isValidElement, memo, useState, type ReactNode } from "react"
+import { common, createLowlight } from "lowlight"
 import { CheckIcon, CopyIcon } from "lucide-react"
 import ReactMarkdown, { type Components } from "react-markdown"
 import rehypeHighlight from "rehype-highlight"
@@ -63,7 +64,50 @@ function CodeBlock({ children }: { children?: ReactNode }) {
   )
 }
 
-const remarkPlugins = [remarkGfm]
+type MarkdownNode = {
+  type: string
+  value?: string
+  lang?: string | null
+  meta?: string | null
+  children?: MarkdownNode[]
+}
+
+const metadataAssignment = /(?:^|\s)[\w.-]+=(?:"[^"]*"|'[^']*'|\S+)/
+const sentencePunctuation = /[.!?](?:\s|$)/
+const commonLanguageRegistry = createLowlight(common)
+
+/** Recover prose accidentally placed on an otherwise empty opening fence. */
+function remarkRecoverEmptyFenceInfo() {
+  return (tree: MarkdownNode) => {
+    const visit = (parent: MarkdownNode) => {
+      if (!parent.children) return
+      parent.children = parent.children.map((node) => {
+        const meta = node.meta?.trim()
+        if (
+          node.type === "code" &&
+          node.value === "" &&
+          node.lang &&
+          meta &&
+          !commonLanguageRegistry.registered(node.lang) &&
+          sentencePunctuation.test(meta) &&
+          !metadataAssignment.test(meta)
+        ) {
+          return {
+            ...node,
+            lang: null,
+            meta: null,
+            value: `${node.lang} ${meta}`,
+          }
+        }
+        visit(node)
+        return node
+      })
+    }
+    visit(tree)
+  }
+}
+
+const remarkPlugins = [remarkGfm, remarkRecoverEmptyFenceInfo]
 const rehypePlugins = [rehypeHighlight]
 const markdownComponents: Components = {
   pre: ({ children }) => <CodeBlock>{children}</CodeBlock>,

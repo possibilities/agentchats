@@ -16,6 +16,9 @@ const host = {
   delay: false,
   rejectEdit: false,
   settle: (_error?: string) => {},
+  pasteKeyDefaultPrevented: null as boolean | null,
+  pasteEventDefaultPrevented: null as boolean | null,
+  pastePayload: null as string | null,
 }
 
 async function request(action: string, ...args: string[]) {
@@ -28,15 +31,29 @@ async function request(action: string, ...args: string[]) {
 }
 
 function Consumer() {
-  const [props, setProps] = useState({
+  const [props, setProps] = useState<{
+    transcriptId: string
+    active: boolean
+    pending: boolean
+    stopping: boolean
+    actionsDisabled: boolean
+    disabled: boolean
+    allowInterrupt: boolean
+    alwaysShowSend: boolean
+    optimisticSubmit: boolean
+    persistenceScope?: string
+    observedSubmissionIds: readonly string[]
+  }>({
     transcriptId: "one",
     active: false,
     pending: false,
     stopping: false,
+    actionsDisabled: false,
     disabled: false,
     allowInterrupt: true,
     alwaysShowSend: false,
     optimisticSubmit: false,
+    observedSubmissionIds: [],
   })
   const [queue, setQueue] = useState<TranscriptQueuedMessage[]>([])
   Object.assign(window, {
@@ -119,4 +136,12 @@ function Consumer() {
     </>
   )
 }
+document.addEventListener("keydown", (event) => {
+  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "v")
+    host.pasteKeyDefaultPrevented = event.defaultPrevented
+})
+document.addEventListener("paste", (event) => {
+  host.pasteEventDefaultPrevented = event.defaultPrevented
+  host.pastePayload = event.clipboardData?.getData("text/plain") ?? null
+})
 createRoot(document.getElementById("consumer")!).render(<Consumer />)
