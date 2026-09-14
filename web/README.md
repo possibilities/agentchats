@@ -193,6 +193,9 @@ app shell or database reader. See the [package guide](packages/transcript/README
 for composition, live-source semantics, building, and agentvoice boundaries.
 The exported `TranscriptComposer` is for host UIs. It is mounted only in
 agentvoice's Agent pane; this reader does not mount a composer and stays read-only.
+Hosts may also wrap a transcript with the exported opt-in
+`DocumentViewerProvider` and supply an authorized Markdown loader; the shared
+package performs no filesystem reads itself.
 
 ## Structure and provenance
 

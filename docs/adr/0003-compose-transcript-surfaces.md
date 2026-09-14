@@ -41,6 +41,17 @@ than block count. The existing renderer remains the default. Both renderers keep
 the same host slots, follow and jump behavior, disclosure provider, DOM roles,
 and transcript-incarnation reset boundary.
 
+## Local document amendment (2026-09-14)
+
+The React entry offers an opt-in `DocumentViewerProvider` around transcript
+surfaces. It recognizes local Markdown link shapes and delegates each read to an
+abortable host loader receiving the exact href and the canonical path of the
+containing document. The host owns path resolution, readable-root policy, and
+transport; the package owns the modal reader, Markdown presentation, relative
+navigation, loading and recovery, and accessible focus behavior. External links
+retain ordinary anchor behavior. A host scope key closes the viewer without
+remounting descendant transcript or composer state.
+
 ## Consequences
 
 The package can be built, packed, and installed without exporting the application
@@ -49,6 +60,10 @@ The live contract supports append and same-ID revision, including streaming voic
 text. Other history changes require a full reload. The committed-history and
 read-only index boundaries in ADR 0002 remain unchanged, as do serve, portless,
 and the exact-origin guard. The package grants no additional origin access.
+
+Likewise, document-link recognition grants no filesystem access. Raw HTML and
+remote embedding stay disabled, and a host loader must independently authorize
+every requested href and base pair.
 
 Agentvoice integration follows when its existing server protocol is connected
 through a source adapter. The consumer owns connection discovery and the

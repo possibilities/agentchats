@@ -11,7 +11,7 @@ ships no app shell, session picker, command UI, database reader, or server proce
 | Import | Surface |
 | --- | --- |
 | `@agentchats/transcript` | `TranscriptMessage`, `TranscriptBlock`, snapshot/update/source types, `groupTranscript`, `activitySummary`, `mergeTranscript` |
-| `@agentchats/transcript/react` | `Transcript`, `TranscriptBlock`, `TranscriptComposer`, `useTranscript` and their props/state types |
+| `@agentchats/transcript/react` | `Transcript`, `TranscriptBlock`, `TranscriptComposer`, `DocumentViewerProvider`, `useTranscript` and their props/state types |
 | `@agentchats/transcript/codex` | `createCodexTranscriptSource`, `parseCodexMessagePresentation`, `mapCodexSubagentActivity`, `CodexTransportOptions` |
 | `@agentchats/transcript/styles.css` | Optional compiled arthack styles; no consumer Tailwind setup needed |
 
@@ -23,7 +23,7 @@ it (for example, `import '@fontsource-variable/geist-mono'`). Otherwise the syst
 monospace stack is used. The stylesheet does not download fonts or restyle the host.
 Pierre loads only when a file diff opens. Raw HTML in Markdown is not rendered.
 
-The 0.3.7 presentation puts Human input and Agent replies on the same left edge,
+The 0.3.8 presentation puts Human input and Agent replies on the same left edge,
 using a flat inset for Human input and open space for replies. Reading text is
 18px with 28px leading, message gaps are 24px (20px in narrow lanes), and prose
 is capped at 80ch.
@@ -135,6 +135,56 @@ each lifecycle record as a separate activity while presenting the agent path and
 action in the collapsed row, with the path, thread, action, event ID, and original
 record available in its disclosure. This keeps separate lifecycle events readable
 when a host groups consecutive activity.
+
+## Local Markdown documents
+
+`DocumentViewerProvider` is an opt-in reader for local Markdown links rendered
+inside its descendants. The shared package recognizes relative and absolute
+`.md` and `.markdown` paths, including `:line[:column]` citations, plus local
+`file:` and `wiki:` targets.
+Ordinary `http(s)`, `mailto`, and other links keep the transcript's normal anchor
+behavior. Recognition is only a UI routing decision: the host loader remains the
+authority for readable roots and must reject untrusted or unavailable paths.
+
+```tsx
+import {
+  DocumentViewerProvider,
+  Transcript,
+  type DocumentLoader,
+} from '@agentchats/transcript/react'
+
+const loadDocument: DocumentLoader = async ({ href, base, signal }) => {
+  const response = await fetch('/api/document', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ href, base }),
+    signal,
+  })
+  const body = await response.json()
+  if (!response.ok) throw new Error(body.error || 'Document unavailable')
+  return body // { title, path, content }
+}
+
+<DocumentViewerProvider load={loadDocument} resetKey={threadId}>
+  <Transcript transcriptId={threadId} messages={messages} />
+</DocumentViewerProvider>
+```
+
+`DocumentRequest` is `{ href, base? }`; the loader receives the same fields plus
+an `AbortSignal` and returns `LoadedDocument` as `{ title, path, content }`.
+Relative links inside a loaded document use the returned canonical `path` as
+their next `base`. `canOpen` may further restrict candidates before opening.
+`resetKey` closes and aborts the viewer on a real host reading-scope change while
+leaving descendant transcript and composer state mounted; keep it stable across
+polls and connection changes. Navigation retains at most 32 loaded documents and
+ignores a repeated request for the current target. The viewer provides loading, errors with Retry,
+document history with Back, Escape/Close, trapped focus with focus return,
+heading anchors, tables, and highlighted code using the transcript's Markdown
+renderer. Bounded leading YAML frontmatter stays available in a quiet raw
+metadata disclosure while the Markdown body remains the reading focus. The
+viewer displays both the returned canonical path and a differing source
+href. Narrow layouts keep both complete values in a compact Source disclosure.
+It never reads the filesystem, embeds remote content, or enables raw HTML.
 
 ## Agent composer
 

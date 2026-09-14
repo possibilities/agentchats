@@ -4,6 +4,7 @@
 @source "./transcript.tsx";
 @source "./windowed-transcript.tsx";
 @source "./composer.tsx";
+@source "./document-viewer.tsx";
 @source "../components/chat";
 @source "../components/ui/button.tsx";
 @source "../components/ui/bubble.tsx";

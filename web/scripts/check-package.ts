@@ -52,7 +52,7 @@ try {
     path.join(directory, "consumer.tsx"),
     `
 import { groupTranscript, mergeTranscript, type TranscriptMessage, type TranscriptMessagePresentation, type TranscriptSource } from '@agentchats/transcript'
-import { Transcript, TranscriptBlock, TranscriptComposer, type TranscriptQueuedMessage, useTranscript } from '@agentchats/transcript/react'
+import { DocumentViewerProvider, Transcript, TranscriptBlock, TranscriptComposer, isLocalMarkdownHref, type DocumentLoader, type TranscriptQueuedMessage, useTranscript } from '@agentchats/transcript/react'
 import { createCodexTranscriptSource, mapCodexSubagentActivity, parseCodexMessagePresentation } from '@agentchats/transcript/codex'
 const presentation: TranscriptMessagePresentation | undefined = parseCodexMessagePresentation('<realtime_delegation><input>Hello</input></realtime_delegation>')
 const subagent = mapCodexSubagentActivity({ id: 'activity', kind: 'started', agentThreadId: 'thread', agentPath: '/root/worker' })
@@ -60,11 +60,13 @@ if (subagent?.activity.detail !== '/root/worker') throw new Error('Missing Codex
 const messages: TranscriptMessage[] = [{ id: 'one', role: 'user', content: 'Hello', status: 'complete', presentation }]
 const source: TranscriptSource = createCodexTranscriptSource()
 const queue: TranscriptQueuedMessage[] = [{ id: 'q', text: 'Next', pausedReason: 'Stopped', canResume: true }]
+const documentLoader: DocumentLoader = async ({ href }) => ({ title: href, path: href, content: '# Local document' })
 export function Consumer() {
   const { snapshot } = useTranscript(source, null)
-  return <><Transcript transcriptId="one" messages={snapshot?.messages ?? messages} /><TranscriptBlock block={groupTranscript(messages)[0]} /><TranscriptComposer transcriptId="one" active actionsDisabled persistenceScope="workspace:thread:agent" persistenceInstanceId="native-window:main" observedSubmissionIds={[]} queue={queue} onSend={async () => {}} onEditingQueuedChange={async () => {}} /></>
+  return <DocumentViewerProvider load={documentLoader} resetKey="one"><Transcript transcriptId="one" messages={snapshot?.messages ?? messages} /><TranscriptBlock block={groupTranscript(messages)[0]} /><TranscriptComposer transcriptId="one" active actionsDisabled persistenceScope="workspace:thread:agent" persistenceInstanceId="native-window:main" observedSubmissionIds={[]} queue={queue} onSend={async () => {}} onEditingQueuedChange={async () => {}} /></DocumentViewerProvider>
 }
 if (typeof mergeTranscript !== 'function') throw new Error('Missing data entry')
+if (!isLocalMarkdownHref({ href: './README.md' })) throw new Error('Missing document link recognition')
 `,
   )
   run([
@@ -83,7 +85,7 @@ if (typeof mergeTranscript !== 'function') throw new Error('Missing data entry')
   run([
     process.execPath,
     "--eval",
-    "const data = await import('@agentchats/transcript'); if (data.groupTranscript([]).length) throw new Error('Invalid data entry'); await import('@agentchats/transcript/react'); await import('@agentchats/transcript/codex')",
+    "const data = await import('@agentchats/transcript'); if (data.groupTranscript([]).length) throw new Error('Invalid data entry'); const react = await import('@agentchats/transcript/react'); if (typeof react.DocumentViewerProvider !== 'function') throw new Error('Missing document viewer'); await import('@agentchats/transcript/codex')",
   ])
   const css = await readFile(
     path.join(directory, "node_modules/@agentchats/transcript/dist/styles.css"),

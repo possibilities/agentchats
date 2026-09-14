@@ -2,9 +2,11 @@
 import { useState } from "react"
 import { createRoot } from "react-dom/client"
 import {
+  DocumentViewerProvider,
   Transcript,
   TranscriptBlock,
   useTranscript,
+  type DocumentLoader,
 } from "@agentchats/transcript/react"
 import {
   groupTranscript,
@@ -42,6 +44,73 @@ const state = {
   live: [] as TranscriptMessage[],
 }
 Object.assign(window, { consumerState: state })
+
+const documentContent = `---
+title: Working doctrine
+tags:
+  - roadmap
+  - guidance
+created: 2026-09-07
+updated: 2026-09-14
+---
+# Working doctrine
+
+The roadmap now reflects the shipped HUD and guidance work.
+
+| Phase | State | Next step |
+| --- | --- | --- |
+| Guidance | Shipped | Observe |
+| Document reader | Active | Validate links |
+
+\`\`\`ts
+const phase = "document-reader"
+\`\`\`
+
+[Open the next phase](./plans/phase-two.md)
+
+[Jump to evidence](#evidence)
+
+${"A calm reading surface keeps long local notes legible. ".repeat(24)}
+
+## Evidence
+
+The loader retains the source href and returns a canonical path.
+`
+
+const documentState = {
+  loads: [] as Array<{ href: string; base?: string }>,
+  failures: 0,
+}
+
+const documentLoader: DocumentLoader = async ({ href, base, signal }) => {
+  documentState.loads.push({ href, base })
+  await new Promise<void>((resolve, reject) => {
+    const timer = window.setTimeout(resolve, 45)
+    signal.addEventListener("abort", () => {
+      window.clearTimeout(timer)
+      reject(new DOMException("Aborted", "AbortError"))
+    }, { once: true })
+  })
+  if (href.includes("missing.md") && documentState.failures++ === 0)
+    throw new Error("Document is outside the available workspace.")
+  if (href.includes("phase-two.md"))
+    return {
+      title: "Phase two",
+      path: "/Users/arthack/wiki/plans/phase-two.md",
+      content: "# Phase two\n\nThis is the next concrete phase.\n\n[Missing evidence](../missing.md)",
+    }
+  if (href.includes("missing.md"))
+    return {
+      title: "Recovered evidence",
+      path: "/Users/arthack/wiki/missing.md",
+      content: "# Recovered evidence\n\nRetry kept the reading context intact.",
+    }
+  return {
+    title: "Working doctrine",
+    path: "/Users/arthack/wiki/working-doctrine.md",
+    content: documentContent,
+  }
+}
 const source: TranscriptSource = {
   async load({ id, signal }) {
     signal.addEventListener("abort", () => state.aborted.push(`load:${id}`))
@@ -129,6 +198,32 @@ function DirectConsumer() {
     </div>
   )
 }
+
+function DocumentConsumer() {
+  const [scope, setScope] = useState("thread-one")
+  const messages = [message(
+    "document-links",
+    `Read [Working doctrine](~/wiki/working-doctrine.md), [Crash kit](</Users/arthack/Test Workspace/CRASH-KIT.md>), [file link](file:///Users/arthack/code/project/README.md), or [wiki note](wiki:working-doctrine).\n\n[Missing note](~/wiki/missing.md) · [External reference](https://example.test/reference) · [Email](mailto:reader@example.test)`,
+  )]
+  Object.assign(window, {
+    consumerState: { ...state, document: documentState, setDocumentScope: setScope },
+  })
+  return (
+    <DocumentViewerProvider load={documentLoader} resetKey={scope}>
+      <main className="document-fixture">
+        <Transcript
+          transcriptId="documents"
+          messages={messages}
+          aria-label="Document transcript"
+        />
+        <label className="document-fixture__draft">
+          Draft
+          <textarea aria-label="Draft reply" defaultValue="Keep this draft" />
+        </label>
+      </main>
+    </DocumentViewerProvider>
+  )
+}
 function Consumer() {
   const [id, setId] = useState("agent")
   const [watch, setWatch] = useState(true)
@@ -165,5 +260,11 @@ function Consumer() {
   )
 }
 createRoot(document.getElementById("consumer")!).render(
-  new URLSearchParams(location.search).has("direct") ? <DirectConsumer /> : <Consumer />,
+  new URLSearchParams(location.search).has("document") ? (
+    <DocumentConsumer />
+  ) : new URLSearchParams(location.search).has("direct") ? (
+    <DirectConsumer />
+  ) : (
+    <Consumer />
+  ),
 )

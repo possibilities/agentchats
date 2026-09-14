@@ -2,6 +2,17 @@
 
 export { Transcript, TranscriptBlock } from "./transcript"
 export type { TranscriptProps, TranscriptBlockProps } from "./transcript"
+export {
+  DocumentViewerProvider,
+} from "./document-viewer"
+export { isLocalMarkdownHref } from "./document-viewer-context"
+export type {
+  DocumentCandidate,
+  DocumentLoader,
+  DocumentRequest,
+  DocumentViewerProviderProps,
+  LoadedDocument,
+} from "./document-viewer"
 export { TranscriptComposer } from "./composer"
 export type {
   TranscriptComposerProps,
