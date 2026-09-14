@@ -372,6 +372,7 @@ test("a windowed polled activity group paints and keeps both children accessible
   await expect(group).toHaveAttribute("aria-expanded", "true")
   await expect(interactionTrigger).toHaveAttribute("aria-expanded", "true")
   await expect(commandTrigger).toHaveAttribute("aria-expanded", "true")
+  await page.screenshot({ path: "test-results/polled-two-activities.png" })
 })
 
 test("Human delivery status is announced without changing the source body", async ({
