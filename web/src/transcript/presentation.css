@@ -568,10 +568,8 @@
   padding: 0 0 0 12px;
   border-left: 1px solid var(--line);
 }
-.activity-group__items > * {
-  content-visibility: auto;
-  contain-intrinsic-size: auto 36px;
-}
+/* Outer transcript windowing bounds work; nested activity children must paint
+   and measure normally so every semantic tool row remains reachable. */
 [data-slot="marker"] {
   gap: 10px;
   padding: 0;

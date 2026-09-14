@@ -401,3 +401,8 @@ text, and reduced motion keeps working still with unchanged geometry.
 Voice inspection uses a square dialog with an accessible title and an inset
 trigger, without a redundant comparison hint. Native form controls explicitly
 inherit the transcript's monospace face.
+
+Grouped activity children paint and measure normally inside the windowed outer
+row. Nested content-visibility placeholders must not hide semantic tool entries
+or reserve blank space in an expanded group. Activity IDs and raw payloads remain
+distinct; grouping does not turn a second tool into lifecycle bookkeeping.
