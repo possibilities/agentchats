@@ -24,6 +24,7 @@ import {
   type PersistedComposerEditing,
   type PersistedComposerRecovery,
   type PersistedComposerState,
+  writeComposerEntryJournal,
   writeComposerState,
 } from "./composer-persistence"
 
@@ -76,6 +77,8 @@ export interface TranscriptComposerProps {
   optimisticSubmit?: boolean
   /** Stable opaque workspace + thread + lane identity for browser draft recovery. */
   persistenceScope?: string
+  /** Stable single-window host identity. Omit in ordinary multi-tab browsers. */
+  persistenceInstanceId?: string
   /** Exact client IDs already present in the authoritative transcript. */
   observedSubmissionIds?: readonly string[]
   /** Defaults to the Codex desktop setting, steer. */
@@ -104,7 +107,7 @@ export interface TranscriptComposerProps {
 /** Desktop-style Agent input. Hosts own queue state, transport and turn identity. */
 export function TranscriptComposer(props: TranscriptComposerProps) {
   const key = props.persistenceScope
-    ? `persistent:${props.persistenceScope}`
+    ? `persistent:${props.persistenceScope}:${props.persistenceInstanceId ?? "tab"}`
     : props.transcriptId
   return <Composer key={key} {...props} />
 }
@@ -118,6 +121,7 @@ function Composer({
   alwaysShowSend = false,
   optimisticSubmit = false,
   persistenceScope,
+  persistenceInstanceId,
   observedSubmissionIds = EMPTY_SUBMISSION_IDS,
   followUpMode,
   onFollowUpModeChange,
@@ -142,6 +146,7 @@ function Composer({
       persistenceScope,
       defaultValue,
       observedSubmissionIds,
+      persistenceInstanceId,
     ),
   )[0]
   const inputId = useId()
@@ -191,22 +196,31 @@ function Composer({
 
   function ownsPersistence() {
     if (!persistenceScope) return true
-    const owner = persistenceOwners.get(persistenceScope)
+    const owner = persistenceOwners.get(
+      `${persistenceScope}:${persistenceInstanceId ?? "tab"}`,
+    )
     return owner === undefined || owner === ownerId
   }
 
-  function flushPersistence() {
+  function flushPersistence(mergeEntryJournal = true) {
     if (persistenceTimer.current !== null && typeof window !== "undefined") {
       window.clearTimeout(persistenceTimer.current)
       persistenceTimer.current = null
     }
     if (!persistenceDirty.current || !ownsPersistence()) return true
-    const written = writeComposerState(persistenceScope, persisted.current)
-    if (written) {
+    const writtenState = writeComposerState(
+      persistenceScope,
+      persisted.current,
+      persistenceInstanceId,
+      mergeEntryJournal,
+    )
+    if (writtenState) {
+      persisted.current = writtenState
+      draftRef.current = writtenState.editing?.text ?? writtenState.draft
       persistenceDirty.current = false
       setStorageWarning(null)
     }
-    return written
+    return Boolean(writtenState)
   }
 
   function updatePersistence(
@@ -216,9 +230,13 @@ function Composer({
     persisted.current = update(persisted.current)
     persistenceDirty.current = true
     if (!persistenceScope || !ownsPersistence()) return true
-    cacheComposerState(persistenceScope, persisted.current)
+    cacheComposerState(
+      persistenceScope,
+      persisted.current,
+      persistenceInstanceId,
+    )
     if (immediate) {
-      const written = flushPersistence()
+      const written = flushPersistence(false)
       if (!written) setStorageWarning(STORAGE_ERROR)
       return written
     }
@@ -231,7 +249,8 @@ function Composer({
 
   useEffect(() => {
     if (!persistenceScope) return
-    persistenceOwners.set(persistenceScope, ownerId)
+    const persistenceOwnerKey = `${persistenceScope}:${persistenceInstanceId ?? "tab"}`
+    persistenceOwners.set(persistenceOwnerKey, ownerId)
     if (!flushPersistence()) setStorageWarning(STORAGE_ERROR)
     const flushOnPageHide = () => {
       if (!flushPersistence()) setStorageWarning(STORAGE_ERROR)
@@ -245,10 +264,10 @@ function Composer({
       flushPersistence()
       window.removeEventListener("pagehide", flushOnPageHide)
       document.removeEventListener("visibilitychange", flushWhenHidden)
-      if (persistenceOwners.get(persistenceScope) === ownerId)
-        persistenceOwners.set(persistenceScope, `unmounted:${ownerId}`)
+      if (persistenceOwners.get(persistenceOwnerKey) === ownerId)
+        persistenceOwners.set(persistenceOwnerKey, `unmounted:${ownerId}`)
     }
-  }, [ownerId, persistenceScope])
+  }, [ownerId, persistenceInstanceId, persistenceScope])
 
   useEffect(() => {
     observedIdsRef.current = new Set(observedSubmissionIds)
@@ -290,6 +309,15 @@ function Composer({
           : { ...current, draft: value },
       immediate,
     )
+    if (
+      !immediate &&
+      !writeComposerEntryJournal(
+        persistenceScope,
+        persisted.current,
+        persistenceInstanceId,
+      )
+    )
+      setStorageWarning(STORAGE_ERROR)
   }
 
   function updateRecoveries(

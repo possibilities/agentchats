@@ -60,7 +60,7 @@ const source: TranscriptSource = createCodexTranscriptSource()
 const queue: TranscriptQueuedMessage[] = [{ id: 'q', text: 'Next', pausedReason: 'Stopped', canResume: true }]
 export function Consumer() {
   const { snapshot } = useTranscript(source, null)
-  return <><Transcript transcriptId="one" messages={snapshot?.messages ?? messages} /><TranscriptBlock block={groupTranscript(messages)[0]} /><TranscriptComposer transcriptId="one" active actionsDisabled persistenceScope="workspace:thread:agent" observedSubmissionIds={[]} queue={queue} onSend={async () => {}} onEditingQueuedChange={async () => {}} /></>
+  return <><Transcript transcriptId="one" messages={snapshot?.messages ?? messages} /><TranscriptBlock block={groupTranscript(messages)[0]} /><TranscriptComposer transcriptId="one" active actionsDisabled persistenceScope="workspace:thread:agent" persistenceInstanceId="native-window:main" observedSubmissionIds={[]} queue={queue} onSend={async () => {}} onEditingQueuedChange={async () => {}} /></>
 }
 if (typeof mergeTranscript !== 'function') throw new Error('Missing data entry')
 `,

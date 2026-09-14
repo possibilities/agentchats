@@ -130,6 +130,12 @@ test("queued edit and saved main draft survive reload, then Save reacquires the 
   await input(page).fill("Saved main draft")
   await page.getByRole("button", { name: "Edit", exact: true }).click()
   await input(page, "Edit queued message").fill("Edited during reload")
+  const editJournal = await page.evaluate(() =>
+    Object.entries(localStorage).find(([key]) => key.endsWith(":entry"))?.[1],
+  )
+  expect(editJournal).toContain('"id":"queued-one"')
+  expect(editJournal).toContain('"text":"Edited during reload"')
+  expect(editJournal).toContain('"savedDraft":"Saved main draft"')
 
   await page.reload()
   await page.evaluate(() =>
@@ -201,6 +207,49 @@ test("storage failure stays visible without blocking input or an authorized send
   await expect(input(page)).toHaveValue("Persistence works again")
 })
 
+test("a failed lifecycle consolidation keeps the newer journal in memory", async ({
+  page,
+}) => {
+  const scope = "workspace-lifecycle-failure:thread-lifecycle-failure:agent"
+  await update(page, {
+    persistenceScope: scope,
+    persistenceInstanceId: "com.example.lifecycle:main",
+  })
+  await page.evaluate(() => {
+    const original = Storage.prototype.setItem
+    ;(window as any).restoreStorage = () => {
+      Storage.prototype.setItem = original
+    }
+    Storage.prototype.setItem = function (key, value) {
+      if (
+        key.startsWith("@agentchats/transcript:composer:v2:") &&
+        !key.endsWith(":entry")
+      )
+        throw new DOMException("Quota exceeded", "QuotaExceededError")
+      return original.call(this, key, value)
+    }
+  })
+  await input(page).fill("Fresh journal before failed consolidation")
+  await page.evaluate(() =>
+    window.dispatchEvent(new PageTransitionEvent("pagehide")),
+  )
+  await expect(page.getByRole("alert")).toContainText(
+    "Browser storage is unavailable.",
+  )
+  await page.evaluate(() => (window as any).restoreStorage())
+  await update(page, {
+    persistenceScope: "workspace-other:thread-other:agent",
+    persistenceInstanceId: "com.example.lifecycle:main",
+  })
+  await update(page, {
+    persistenceScope: scope,
+    persistenceInstanceId: "com.example.lifecycle:main",
+  })
+  await expect(input(page)).toHaveValue(
+    "Fresh journal before failed consolidation",
+  )
+})
+
 test("reloaded queued edit can be cancelled and releases the host hold", async ({
   page,
 }) => {
@@ -228,14 +277,20 @@ test("reloaded queued edit can be cancelled and releases the host hold", async (
   ).toBeNull()
 })
 
-test("rapid composed input batches storage writes and reloads the final value", async ({
+test("rapid composed input journals compact entry data and reloads the final value", async ({
   page,
 }) => {
   await page.evaluate(() => {
     const original = Storage.prototype.setItem
-    ;(window as any).composerStorageWrites = 0
+    ;(window as any).composerStorageWrites = { full: 0, journal: 0, max: 0 }
     Storage.prototype.setItem = function (...args) {
-      ;(window as any).composerStorageWrites += 1
+      const [key, value] = args
+      if (key.startsWith("@agentchats/transcript:composer:v2:")) {
+        const writes = (window as any).composerStorageWrites
+        if (key.endsWith(":entry")) writes.journal += 1
+        else writes.full += 1
+        writes.max = Math.max(writes.max, value.length)
+      }
       return original.apply(this, args)
     }
   })
@@ -246,12 +301,52 @@ test("rapid composed input batches storage writes and reloads the final value", 
   await field.pressSequentially("Fast input and 日本語", { delay: 0 })
   await field.dispatchEvent("compositionend")
   await page.waitForTimeout(180)
-  expect(
-    await page.evaluate(() => (window as any).composerStorageWrites),
-  ).toBeLessThanOrEqual(2)
+  const writes = await page.evaluate(
+    () => (window as any).composerStorageWrites as {
+      full: number
+      journal: number
+      max: number
+    },
+  )
+  expect(writes.full).toBeLessThanOrEqual(2)
+  expect(writes.journal).toBeGreaterThan(0)
+  expect(writes.max).toBeLessThan(2_048)
   await page.reload()
   await update(page, { persistenceScope: scope })
   await expect(input(page)).toHaveValue("Fast input and 日本語")
+})
+
+test("stable native instance restores a same-tick draft directly from its entry journal", async ({
+  page,
+}) => {
+  const scope = "workspace-native:thread-native:agent"
+  const persistenceInstanceId = "com.example.kiosk:main"
+  await update(page, { persistenceScope: scope, persistenceInstanceId })
+  await input(page).fill("Last keystroke before immediate quit")
+  const entries = await page.evaluate(() =>
+    Object.fromEntries(Object.entries(localStorage)),
+  )
+  expect(
+    Object.entries(entries).some(
+      ([key, value]) =>
+        key.endsWith(":entry") &&
+        value.includes("Last keystroke before immediate quit"),
+    ),
+  ).toBe(true)
+
+  sessionStorage.clear()
+  await page.reload()
+  await update(page, { persistenceScope: scope, persistenceInstanceId })
+  await expect(input(page)).toHaveValue("Last keystroke before immediate quit")
+  await expect(page.locator(".transcript-composer__recovery")).toHaveCount(0)
+
+  await update(page, {
+    persistenceInstanceId: "com.example.other-kiosk:main",
+  })
+  await expect(input(page)).toHaveValue("")
+  await expect(page.locator(".transcript-composer__recovery")).toContainText(
+    "Last keystroke before immediate quit",
+  )
 })
 
 test("Cmd/Ctrl+V and synthetic paste are not prevented by composer handlers", async ({

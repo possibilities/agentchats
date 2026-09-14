@@ -28,6 +28,14 @@ export interface PersistedComposerState {
   editing: PersistedComposerEditing | null
 }
 
+interface PersistedComposerEntryJournal {
+  version: 1
+  tabId: string
+  updatedAt: number
+  draft: string
+  editing: PersistedComposerEditing | null
+}
+
 interface PersistedComposerSlot {
   tabId: string
   updatedAt: number
@@ -117,24 +125,33 @@ function readTabId() {
   }
 }
 
+function readSlotId(instanceId?: string) {
+  return instanceId ? `instance:${instanceId}` : readTabId()
+}
+
 export function composerStorageKey(scope: string) {
   return `${STORAGE_PREFIX}${encodeURIComponent(scope)}`
 }
 
-function composerMemoryKey(scope: string) {
-  return composerSlotKey(scope, readTabId())
+function composerMemoryKey(scope: string, instanceId?: string) {
+  return composerSlotKey(scope, readSlotId(instanceId))
 }
 
 function composerSlotKey(scope: string, tabId: string) {
   return `${composerStorageKey(scope)}:${encodeURIComponent(tabId)}`
 }
 
+function composerJournalKey(scope: string, tabId: string) {
+  return `${composerSlotKey(scope, tabId)}:entry`
+}
+
 export function cacheComposerState(
   scope: string | undefined,
   state: PersistedComposerState,
+  instanceId?: string,
 ) {
   if (scope) {
-    const key = composerMemoryKey(scope)
+    const key = composerMemoryKey(scope, instanceId)
     const previous = memory.get(key)
     memory.set(key, {
       state,
@@ -233,6 +250,35 @@ function parseRecord(value: unknown): PersistedComposerRecord | null {
     : null
 }
 
+function parseJournal(value: unknown): PersistedComposerEntryJournal | null {
+  if (
+    !isObject(value) ||
+    value.version !== 1 ||
+    typeof value.tabId !== "string" ||
+    typeof value.updatedAt !== "number" ||
+    typeof value.draft !== "string"
+  )
+    return null
+  const editing = parseEditing(value.editing)
+  if (value.editing !== null && !editing) return null
+  return {
+    version: 1,
+    tabId: value.tabId,
+    updatedAt: value.updatedAt,
+    draft: value.draft,
+    editing,
+  }
+}
+
+function applyJournal(
+  state: PersistedComposerState,
+  journal: PersistedComposerEntryJournal | null,
+) {
+  return journal
+    ? { ...state, draft: journal.draft, editing: journal.editing }
+    : state
+}
+
 function uniqueByClientId<T extends { clientId: string }>(values: T[]) {
   const seen = new Set<string>()
   return values.filter((value) => {
@@ -314,13 +360,15 @@ export function loadComposerState(
   scope: string | undefined,
   defaultValue: string,
   observedSubmissionIds: readonly string[],
+  instanceId?: string,
 ): LoadedComposerState {
   const fallback = emptyComposerState(defaultValue)
   if (!scope || typeof window === "undefined")
     return { state: fallback, changed: false, storageAvailable: true }
 
   const observed = new Set(observedSubmissionIds)
-  const cached = memory.get(composerMemoryKey(scope))
+  const memoryKey = composerMemoryKey(scope, instanceId)
+  const cached = memory.get(memoryKey)
   if (cached) {
     const state = recoverPending(cached.state, observed)
     return {
@@ -333,13 +381,16 @@ export function loadComposerState(
     }
   }
 
-  const tabId = readTabId()
+  const tabId = readSlotId(instanceId)
   const slotKey = composerSlotKey(scope, tabId)
+  const journalKey = composerJournalKey(scope, tabId)
   let serialized: string | null
+  let serializedJournal: string | null
   try {
     serialized = window.localStorage.getItem(slotKey)
+    serializedJournal = window.localStorage.getItem(journalKey)
   } catch {
-    memory.set(composerMemoryKey(scope), {
+    memory.set(memoryKey, {
       state: fallback,
       dirty: false,
       storageAvailable: false,
@@ -347,8 +398,10 @@ export function loadComposerState(
     })
     return { state: fallback, changed: false, storageAvailable: false }
   }
-  if (!serialized) {
+  if (!serialized && !serializedJournal) {
     const otherSlots: PersistedComposerSlot[] = []
+    const records = new Map<string, PersistedComposerRecord>()
+    const journals = new Map<string, PersistedComposerEntryJournal>()
     try {
       const prefix = `${composerStorageKey(scope)}:`
       for (let index = 0; index < window.localStorage.length; index += 1) {
@@ -356,13 +409,28 @@ export function loadComposerState(
         if (!key?.startsWith(prefix) || key === slotKey) continue
         const candidate = window.localStorage.getItem(key)
         if (!candidate) continue
-        const record = parseRecord(JSON.parse(candidate))
-        if (record)
-          otherSlots.push({
-            tabId: record.tabId,
-            updatedAt: record.updatedAt,
-            state: record.state,
-          })
+        const parsed = JSON.parse(candidate)
+        if (key.endsWith(":entry")) {
+          const journal = parseJournal(parsed)
+          if (journal && journal.tabId !== tabId)
+            journals.set(journal.tabId, journal)
+        } else {
+          const record = parseRecord(parsed)
+          if (record && record.tabId !== tabId)
+            records.set(record.tabId, record)
+        }
+      }
+      for (const otherTabId of new Set([
+        ...records.keys(),
+        ...journals.keys(),
+      ])) {
+        const record = records.get(otherTabId)
+        const journal = journals.get(otherTabId)
+        otherSlots.push({
+          tabId: otherTabId,
+          updatedAt: Math.max(record?.updatedAt ?? 0, journal?.updatedAt ?? 0),
+          state: applyJournal(record?.state ?? emptyComposerState(), journal ?? null),
+        })
       }
     } catch {
       return { state: fallback, changed: false, storageAvailable: false }
@@ -376,27 +444,41 @@ export function loadComposerState(
   }
 
   let record: PersistedComposerRecord | null
+  let journal: PersistedComposerEntryJournal | null
   try {
-    record = parseRecord(JSON.parse(serialized))
+    record = serialized ? parseRecord(JSON.parse(serialized)) : null
+    journal = serializedJournal
+      ? parseJournal(JSON.parse(serializedJournal))
+      : null
   } catch {
     record = null
+    journal = null
   }
-  if (!record)
-    memory.set(composerMemoryKey(scope), {
-      state: fallback,
+  const unreadable = Boolean((serialized && !record) || (serializedJournal && !journal))
+  const journalIsNewer = Boolean(
+    journal && (!record || journal.updatedAt >= record.updatedAt),
+  )
+  const durableState = applyJournal(
+    record?.state ?? fallback,
+    journalIsNewer ? journal : null,
+  )
+  if (unreadable)
+    memory.set(memoryKey, {
+      state: durableState,
       dirty: false,
       storageAvailable: false,
       blocked: true,
     })
-  if (!record)
-    return { state: fallback, changed: false, storageAvailable: false }
+  if (unreadable)
+    return { state: durableState, changed: false, storageAvailable: false }
 
-  const state = recoverPending(record.state, observed)
+  const state = recoverPending(durableState, observed)
   return {
     state,
     changed:
-      state.pending.length !== record.state.pending.length ||
-      state.recoveries.length !== record.state.recoveries.length,
+      journalIsNewer ||
+      state.pending.length !== durableState.pending.length ||
+      state.recoveries.length !== durableState.recoveries.length,
     storageAvailable: true,
   }
 }
@@ -404,29 +486,88 @@ export function loadComposerState(
 export function writeComposerState(
   scope: string | undefined,
   state: PersistedComposerState,
+  instanceId?: string,
+  mergeEntryJournal = false,
 ) {
-  if (!scope || typeof window === "undefined") return true
-  cacheComposerState(scope, state)
-  if (memory.get(composerMemoryKey(scope))?.blocked) return false
+  if (!scope || typeof window === "undefined") return state
+  const memoryKey = composerMemoryKey(scope, instanceId)
+  cacheComposerState(scope, state, instanceId)
+  if (memory.get(memoryKey)?.blocked) return null
+  let nextState = state
   try {
-    const tabId = readTabId()
+    const tabId = readSlotId(instanceId)
+    if (mergeEntryJournal) {
+      const serializedJournal = window.localStorage.getItem(
+        composerJournalKey(scope, tabId),
+      )
+      if (serializedJournal) {
+        const journal = parseJournal(JSON.parse(serializedJournal))
+        if (!journal) throw new Error("Unreadable composer entry journal")
+        nextState = applyJournal(state, journal)
+      }
+    }
     window.localStorage.setItem(
       composerSlotKey(scope, tabId),
-      JSON.stringify({ version: 2, tabId, updatedAt: Date.now(), state }),
+      JSON.stringify({
+        version: 2,
+        tabId,
+        updatedAt: Date.now(),
+        state: nextState,
+      }),
     )
-    memory.set(composerMemoryKey(scope), {
-      state,
+    window.localStorage.removeItem(composerJournalKey(scope, tabId))
+    memory.set(memoryKey, {
+      state: nextState,
       dirty: false,
       storageAvailable: true,
       blocked: false,
     })
-    return true
+    return nextState
   } catch {
-    memory.set(composerMemoryKey(scope), {
-      state,
+    memory.set(memoryKey, {
+      state: nextState,
       dirty: true,
       storageAvailable: false,
       blocked: false,
+    })
+    return null
+  }
+}
+
+export function writeComposerEntryJournal(
+  scope: string | undefined,
+  state: PersistedComposerState,
+  instanceId?: string,
+) {
+  if (!scope || typeof window === "undefined") return true
+  const memoryKey = composerMemoryKey(scope, instanceId)
+  cacheComposerState(scope, state, instanceId)
+  const blocked = memory.get(memoryKey)?.blocked ?? false
+  try {
+    const tabId = readSlotId(instanceId)
+    window.localStorage.setItem(
+      composerJournalKey(scope, tabId),
+      JSON.stringify({
+        version: 1,
+        tabId,
+        updatedAt: Date.now(),
+        draft: state.draft,
+        editing: state.editing,
+      } satisfies PersistedComposerEntryJournal),
+    )
+    const cached = memory.get(memoryKey)
+    if (cached)
+      memory.set(memoryKey, {
+        ...cached,
+        storageAvailable: blocked ? false : true,
+      })
+    return !blocked
+  } catch {
+    memory.set(memoryKey, {
+      state,
+      dirty: true,
+      storageAvailable: false,
+      blocked,
     })
     return false
   }

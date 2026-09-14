@@ -104,6 +104,14 @@ Visible Working copy is replaced by an accessible full-width activity divider at
 the composer boundary. It occupies no layout height, animates only while active,
 and becomes a still accent line under reduced-motion preference.
 
+Package 0.3.6 adds an optional `persistenceInstanceId` for hosts that can prove a
+stable single-window identity across web-process replacement. The instance and
+scope address the same durable slot directly; ordinary browser tabs omit the
+instance and remain isolated. A compact synchronous entry journal protects the
+latest textarea change before the batched full-state write, including queued-edit
+identity, text, and saved main draft. Pending submissions remain full-state
+records and are never replayed after recovery.
+
 ## Consequences
 
 Agentvoice wires native app-server transport and exact thread/turn identity.

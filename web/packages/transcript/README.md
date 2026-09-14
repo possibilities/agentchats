@@ -23,7 +23,7 @@ it (for example, `import '@fontsource-variable/geist-mono'`). Otherwise the syst
 monospace stack is used. The stylesheet does not download fonts or restyle the host.
 Pierre loads only when a file diff opens. Raw HTML in Markdown is not rendered.
 
-The 0.3.5 presentation puts Human input and Agent replies on the same left edge,
+The 0.3.6 presentation puts Human input and Agent replies on the same left edge,
 using a flat inset for Human input and open space for replies. Reading text is
 18px with 28px leading, message gaps are 24px (20px in narrow lanes), and prose
 is capped at 80ch.
@@ -159,6 +159,7 @@ import { Transcript, TranscriptComposer } from '@agentchats/transcript/react'
     alwaysShowSend
     optimisticSubmit
     persistenceScope={workspaceThreadLaneKey}
+    persistenceInstanceId={nativeWindowPersistenceId}
     observedSubmissionIds={reconciledClientIds}
     onSend={(text, submission) => startTurn(text, submission.clientId)}
     onSteer={steerCurrentTurn}
@@ -226,11 +227,19 @@ from a reader view UUID. Pass native client IDs already observed in the transcri
 through `observedSubmissionIds`. Exact matches remove pending or recovered text
 without clearing a newer draft.
 
+`persistenceInstanceId` is an optional stable identity for a confirmed
+single-window native host. Together with the scope, it restores that window's
+draft directly after its web process is recreated. Ordinary browser hosts must
+omit it so tabs keep separate slots. Supplying one shared instance ID to multiple
+live windows makes them writers to the same slot and is unsupported.
+
 Pending text restored after a reload is shown as delivery unknown and is never
 resent automatically. Browser storage can be unavailable, full, evicted, or
 cleared; the composer keeps working and reports that durable recovery is
-unavailable. Typing writes are batched and critical transitions flush
-immediately. Tabs use separate storage slots. When a newly created browser
+unavailable. A compact entry journal records each textarea input synchronously;
+the complete state remains batched and critical transitions flush immediately.
+Input-method text is recoverable once the browser emits its input change. Tabs
+use separate storage slots. When a newly created browser
 session finds another slot, its text is offered as an explicit recovery instead
 of copied into the active draft. Some browsers clone session storage when a tab
 is duplicated; those two tabs can share a slot, where the latest write wins.

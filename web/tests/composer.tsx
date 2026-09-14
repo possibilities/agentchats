@@ -42,6 +42,7 @@ function Consumer() {
     alwaysShowSend: boolean
     optimisticSubmit: boolean
     persistenceScope?: string
+    persistenceInstanceId?: string
     observedSubmissionIds: readonly string[]
   }>({
     transcriptId: "one",
