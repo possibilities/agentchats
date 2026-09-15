@@ -732,16 +732,21 @@ export function WindowedTranscript<T extends { id: string }>({
               <div
                 key={row.key}
                 ref={virtualizer.measureElement}
-                // WKWebView can miss the panel's final ResizeObserver delivery,
-                // leaving the following absolute row over the last activity.
-                // Base UI exposes the completed disclosure through these events.
+                // Refresh the settled disclosure without discarding other row sizes.
+                // measure() clears cached heights without remeasuring stable refs.
                 onTransitionEnd={(event) => {
                   if (event.target !== event.currentTarget)
-                    virtualizer.measure()
+                    virtualizer.resizeItem(
+                      virtualRow.index,
+                      event.currentTarget.offsetHeight,
+                    )
                 }}
                 onAnimationEnd={(event) => {
                   if (event.target !== event.currentTarget)
-                    virtualizer.measure()
+                    virtualizer.resizeItem(
+                      virtualRow.index,
+                      event.currentTarget.offsetHeight,
+                    )
                 }}
                 data-index={virtualRow.index}
                 data-windowed-row-key={row.key}

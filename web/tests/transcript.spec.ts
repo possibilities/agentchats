@@ -210,13 +210,18 @@ test("windowed subagent lifecycle groups keep every detail reachable through pol
   await expect(startedTrigger).toBeVisible()
   await startedTrigger.click()
   const startedBody = children.nth(0).getByLabel("Activity", { exact: true })
+  await scroller.hover()
+  await page.mouse.wheel(0, -100)
   await startedBody.scrollIntoViewIfNeeded()
   await expect(startedBody).toHaveText("Started")
-  expect(await startedBody.evaluate((element, selector) => {
-    const viewport = document.querySelector(selector)!.getBoundingClientRect()
-    const body = element.getBoundingClientRect()
-    return body.top >= viewport.top && body.bottom <= viewport.bottom
-  }, viewport)).toBe(true)
+  await expect.poll(async () => {
+    await startedBody.scrollIntoViewIfNeeded()
+    return startedBody.evaluate((element, selector) => {
+      const viewport = document.querySelector(selector)!.getBoundingClientRect()
+      const body = element.getBoundingClientRect()
+      return body.top >= viewport.top && body.bottom <= viewport.bottom
+    }, viewport)
+  }).toBe(true)
   await completedTrigger.scrollIntoViewIfNeeded()
   await expect(completedTrigger).toBeVisible()
   await completedTrigger.focus()
@@ -224,11 +229,14 @@ test("windowed subagent lifecycle groups keep every detail reachable through pol
   const completedBody = children.nth(1).getByLabel("Activity", { exact: true })
   await completedBody.scrollIntoViewIfNeeded()
   await expect(completedBody).toHaveText("Completed")
-  expect(await completedBody.evaluate((element, selector) => {
-    const viewport = document.querySelector(selector)!.getBoundingClientRect()
-    const body = element.getBoundingClientRect()
-    return body.top >= viewport.top && body.bottom <= viewport.bottom
-  }, viewport)).toBe(true)
+  await expect.poll(async () => {
+    await completedBody.scrollIntoViewIfNeeded()
+    return completedBody.evaluate((element, selector) => {
+      const viewport = document.querySelector(selector)!.getBoundingClientRect()
+      const body = element.getBoundingClientRect()
+      return body.top >= viewport.top && body.bottom <= viewport.bottom
+    }, viewport)
+  }).toBe(true)
   expect(await scroller.evaluate((element) => element.scrollTop > 0)).toBe(true)
 
   const followup = subagentMessage("followup", "interacted", "/root/reviewer")
@@ -401,6 +409,43 @@ test("a windowed polled activity group paints and keeps every child accessible",
   await expect(interactionTrigger).toHaveAttribute("aria-expanded", "true")
   await expect(commandTrigger).toHaveAttribute("aria-expanded", "true")
   await page.screenshot({ path: "test-results/polled-five-activities.png" })
+})
+
+test("settled activity disclosure retains measured row heights", async ({ page }) => {
+  await page.goto("/tests/consumer.html?direct")
+  const messages: Message[] = [
+    { id: "before", role: "assistant", content: "Before activity", status: "complete" },
+    ...Array.from({ length: 5 }, (_, index): Message => ({
+      id: `command-${index}`, role: "tool", content: `command ${index}`,
+      status: "complete", toolActivity: {
+        name: "Command", detail: `command ${index}`, state: "complete",
+      },
+    })),
+    { id: "after", role: "assistant", content: "After activity", status: "complete" },
+  ]
+  await page.evaluate((messages) => {
+    const host = (window as any).directTranscript
+    host.setWindowed(true)
+    host.setDetail("full")
+    host.setMessages(messages)
+  }, messages)
+  const group = page.locator(".activity-group__trigger")
+  await group.click()
+  await expect(group).toHaveAttribute("aria-expanded", "true")
+  const items = page.locator(".activity-group__items")
+  await expect(items.locator(":scope > *")).toHaveCount(5)
+  // Completion events must retain actual sizes, including other mounted rows.
+  for (const type of ["transitionend", "animationend"]) {
+    await items.evaluate((element, type) => {
+      element.dispatchEvent(new Event(type, { bubbles: true }))
+    }, type)
+    await expect.poll(() => group.evaluate((element) => {
+      const row = element.closest("[data-windowed-row-key]")!
+      const last = row.querySelector(".activity-group__items")!.lastElementChild!
+      return row.nextElementSibling!.getBoundingClientRect().top -
+        last.getBoundingClientRect().bottom
+    })).toBeGreaterThanOrEqual(0)
+  }
 })
 
 test("Human delivery status is announced without changing the source body", async ({
