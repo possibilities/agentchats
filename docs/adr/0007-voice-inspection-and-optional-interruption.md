@@ -1,6 +1,6 @@
 # 7. Voice inspection and optional interruption
 
-Status: Accepted
+Status: Superseded for AgentChats by [ADR 0008](0008-retire-the-web-conversation-reader.md)
 Date: 2026-09-13
 
 Partially supersedes [ADR 0004](0004-host-owned-agent-interaction.md) for hosts

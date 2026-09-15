@@ -5,7 +5,7 @@ index-ownership decision. Read it with [CONTEXT.md](../../CONTEXT.md) before
 changing native readers, indexing or query behavior.
 
 [0002: Own the web conversation reader](0002-own-the-web-conversation-reader.md)
-records the approved Be Like Grok relocation and its initial Codex read boundary.
+records the historical Be Like Grok relocation and its initial Codex read boundary.
 
 [0003: Compose transcript surfaces](0003-compose-transcript-surfaces.md)
 records the reduced reader and the portable component/live-source API.
@@ -22,6 +22,11 @@ history. It adds no transcript archive or index retention policy.
 
 [0007: Voice inspection and optional interruption](0007-voice-inspection-and-optional-interruption.md)
 records modal Human voice inspection and passive progress for hosts without Stop.
+
+[0008: Retire the web conversation reader](0008-retire-the-web-conversation-reader.md)
+supersedes AgentChats' web-reader and shared-presentation ownership. The browser
+UI moves to AgentVoice; AgentChats retains indexing, evidence reads, CLI/MCP,
+native resume commands, and the OpenTUI picker.
 
 ## Withdrawn viewer experiment
 

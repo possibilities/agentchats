@@ -61,7 +61,7 @@ the first agent search works. _Avoid_: configure, setup.
 **agentchats CLI** — the CLI this repository owns end-to-end: `bin/agentchats`,
 linked editable into `~/.local/bin` by the installer. `index` builds and
 refreshes the session index; `search`, `sessions`, `view`, `expand`, and
-`resume` query it; `state` prints bearings; `serve` runs the local web reader. _Avoid_: cass wrapper, chats CLI
+`resume` query it; `state` prints bearings. _Avoid_: cass wrapper, chats CLI
 (the CLI owns its index outright now; it wraps nothing).
 
 **state dump** — the bearings section `agentchats state` prints for agents
@@ -69,15 +69,6 @@ re-orienting in a project: workspace-scoped, budget-capped, markdown a model
 reads, silent when empty. The contract is shared across the `agent*` CLIs.
 _Avoid_: status (that's the index health probe, a distinct agentchats
 command).
-
-**web reader** — the local React/Vite conversation reader in `web/`, owned by
-agentchats and relocated from the approved Be Like Grok design. Initial scope
-is Codex: discovery through the shared session-index query layer, rich
-committed history and live polling through a Codex adapter. It follows the
-arthack web design, independently of the Signal Room TUI. `agentchats serve`
-runs Vite dev with HMR under portless at `https://agentchats.localhost`
-(`--production` serves the prepared build);
-AgentStart owns launchd supervision. _Avoid_: Be Like Grok service.
 
 **Routing receipt** — bounded authored decision or parent-acceptance JSON
 returned by `routing-receipt` and retained only if the native transcript records

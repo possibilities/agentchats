@@ -98,4 +98,5 @@ is not evidence that no prior conversation exists.
 `resume` returns the native command for a human handoff; it does not launch a
 session. Archived copies remain readable but return `archived` on resume.
 The operator CLI and bare `agentchats search` picker remain available for
-human use. Starting another agent still depends on the task's authorization.
+human use. AgentChats has no browser UI or web server. Starting another agent
+still depends on the task's authorization.

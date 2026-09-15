@@ -6,7 +6,7 @@ Read [CONTEXT.md](CONTEXT.md) for session/index terms and the
 ## What this repository is
 
 Agentchats makes the local coding-agent session history searchable. It owns
-the path from transcript to search result and conversation reader:
+the path from transcript to search result:
 
 - `src/parse/` — transcript parsers for Claude Code and Codex, normalizing
   each into a common message shape.
@@ -14,23 +14,19 @@ the path from transcript to search result and conversation reader:
   incremental and retention-aware), and the query layer search reads from.
 - `src/cli/` — the `agentchats` command surface: `index`, `status`,
   `search`, `sessions`, `view`, `expand`, `routing`, `routing-receipt`,
-  `resume`, `state`, `guide`, and the operator `serve`, plus
+  `resume`, `state`, and `guide`, plus
   the in-process stdio MCP adapter.
 - `src/routing/` — bounded reads of exact native rollouts and stateless authored
   receipt validation; native history retains evidence, with no second store.
-- `web/` — the local React/Vite conversation reader; agentchats session
-  discovery with a Codex committed-history adapter. See `web/README.md`.
 - `src/tui/` — the Signal Room resume picker (bun + OpenTUI) behind
   `agentchats search` with no `--json`.
 - `scripts/install.sh` — links the `agentchats` CLI into `~/.local/bin` and
-  prepares the production web reader and refreshes the session index.
+  refreshes the session index.
 - `skills/chats/` — the source of the `chats` agent skill, the runbook that
   teaches agents to wield `agentchats`. The `skills/<name>/` layout is the
   convention AgentStart's per-checkout skill scan discovers.
 
-Only Claude Code and Codex are in scope for the index. The web reader currently
-supports Codex only; keep provider-specific reading in its adapter so a later
-Claude reader can use the same presentation components.
+Only Claude Code and Codex are in scope for the index.
 
 This repository used to wrap a third-party tool, cass, that covered twenty-odd more agents plus semantic
 search, archive, and export; `docs/adr/0001-own-the-session-index.md`
@@ -50,8 +46,7 @@ synchronization path here.
   A machine without this checkout is a skip inside AgentStart, not a failure;
   a present checkout that fails to install is a real error and propagates.
 - The installer resolves the complete frozen dependency lockfile before
-  linking the CLI: root Bun dependencies, web npm dependencies, and the web
-  production build. It then refreshes the index through the newly linked
+  linking the CLI. It then refreshes the index through the newly linked
   CLI — every step idempotent, so a rerun after a failure just resumes.
 - The index prepares incrementally when healthy and rebuilds fully via
   `agentchats index --full` when missing, unhealthy, or after a failed
@@ -114,15 +109,6 @@ synchronization path here.
   resume directive on enter and nothing on escape. The TUI follows the
   `fleet-tui-design` wiki contract (chromeless, ctrl+k palette, Signal
   Room tokens in `src/tui/theme.ts`).
-- `web/` changes: `bun run web:check` and `bun run web:test` (install with
-  `npm --prefix web ci`; Chromium with `cd web && npx playwright install chromium`).
-  Root `bun test` covers `test/`; the reader has separate Bun API tests and
-  Playwright browser specs. Retain the shipped arthack web design, documented
-  in `web/docs/arthack-aesthetic-brief.md`, rather than the TUI theme.
-- `serve` stays foreground under portless at the fixed HTTPS agentchats host.
-  Keep the backend loopback-only with strict binding and the exact-origin
-  guard. Runtime restarts must not install packages, rebuild, or prompt for
-  sudo. AgentStart owns the shared proxy and launchd job.
 - Installer changes: `./scripts/install.sh --check` here to see the plan,
   then `--install` to apply it, then AgentStart's convergence check
   (`~/code/agentstart/scripts/install.sh --install`).

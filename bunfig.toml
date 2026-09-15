@@ -1,3 +1,0 @@
-[test]
-# Browser specs in web/tests run under Playwright, not the Bun test runner.
-root = "./test"

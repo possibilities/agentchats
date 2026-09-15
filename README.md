@@ -9,7 +9,7 @@ under `~/.claude/projects` and Codex under `~/.codex/sessions`.
 Agentchats turns that scattered history into a searchable local index, and
 teaches agents to use it.
 
-Four pieces do that:
+Three pieces do that:
 
 - **The session index.** `src/parse/` turns each Claude Code and Codex
   transcript into a common message shape; `src/store/` writes it into a
@@ -22,10 +22,6 @@ Four pieces do that:
   `expand`, and `resume` are the query surface; bare `search` with no
   `--json` is the Signal Room resume picker (`src/tui/`, bun + OpenTUI).
   `agentchats mcp` serves the same typed producer handlers over stdio.
-- **The local conversation reader.** `web/` contains the React/Vite reader
-  relocated from the approved Be Like Grok design. It discovers Codex sessions
-  through the shared index query layer and reads rich committed history from
-  Codex. [Run and verify the reader](web/README.md).
 - **The `chats` skill.** `skills/chats/SKILL.md` is a runbook that teaches
   agents to use MCP through the directly connected MCP server: freshness, the search → view/expand → resume
   drill-down loop, query language, token budgeting, and recovery.
@@ -45,67 +41,11 @@ scripts/install.sh --check     # print the plan without changing anything
 ~/code/agentstart/scripts/sync-skills   # refresh the common capability pack
 ```
 
-The installer resolves both frozen lockfiles and builds the production reader
-before linking the CLI, then refreshes the index through the newly linked CLI. Index-building subprocesses are time-bounded
+The installer resolves the frozen dependency lockfile before linking the CLI,
+then refreshes the index through the newly linked CLI. Index-building subprocesses are time-bounded
 (`scripts/run-with-timeout`) and reaped on timeout or installer termination,
 so a stuck rebuild cannot hang AgentStart or leave an orphaned process
 behind.
-
-## Run the conversation reader
-
-From this checkout, with Bun 1.3.14+, Node 24+, and npm:
-
-```sh
-scripts/install.sh --install
-agentchats serve
-```
-
-Open **https://agentchats.localhost**. The shared portless HTTPS proxy needs
-one-time interactive setup (`portless service install`, or `portless proxy start`),
-including sudo and CA trust. Messages / Full, expandable tools and diffs,
-and Watch live all use the shipped arthack web design. This initial reader is
-Codex-only; the index, CLI, and MCP continue to cover Claude Code too.
-
-`bun run web:check` checks reader lint, types, and the production build.
-After `cd web && npx playwright install chromium`, `bun run check` from the
-repository root verifies both trees, including API and browser tests.
-
-`agentchats serve` runs Vite dev with HMR and the Bun reader API under pinned
-portless in the foreground. Installed dependencies are required; **dev does not
-need `web/dist`**. Edits to the linked checkout appear without rebuilding or
-redeploying. `agentchats serve --production` runs the prepared `web/dist` build
-instead; rebuild it after code changes. The normal installer resolves both
-lockfiles and still prepares production assets. Runtime restarts never install
-packages, build production assets, or prompt for sudo.
-
-AgentStart owns the `io.arthack.agentchats.serve` launchd job, invoking
-`~/.local/bin/agentchats serve` with Bun and Node on PATH. To make the always-on
-LaunchAgent editable from **main**, install from the canonical main checkout,
-then restart the already-installed job:
-
-```sh
-cd ~/code/agentchats            # canonical checkout on main
-scripts/install.sh --install
-launchctl kickstart -k "gui/$(id -u)/io.arthack.agentchats.serve"
-```
-
-The CLI link determines which checkout is served, independent of launchd's
-working directory. Reinstall when dependencies change; restart for server/API
-changes. UI edits use HMR. The route name is fixed even in worktrees. Bind
-failures and missing prerequisites exit nonzero; TERM/INT/HUP stop the child
-and release the route. No launchd files are installed here. For a separate
-loopback development URL, `bun run web:dev` still works.
-
-This is the intended **fleet web UI pattern**: default Vite dev with HMR, an
-AgentStart-owned launchd job, and a fixed portless `<app>.localhost` HTTPS name,
-with `--production` optional. Agentchats is the first instance; the future
-agentvoice web UI will follow the same setup at `https://agentvoice.localhost`.
-Keep dependency installation outside runtime restarts and backends loopback-only
-with strict ports and exact-origin guards. See the [service contract](web/README.md#foreground-service-contract)
-for the reusable ownership and startup details. Agentvoice is not implemented here.
-
-See [the reader guide](web/README.md) for data sources and limitations, and
-[ADR 0002](docs/adr/0002-own-the-web-conversation-reader.md) for the boundary.
 
 ## MCP for agents
 
@@ -192,7 +132,6 @@ src/parse/                transcript parsers (Claude Code, Codex)
 src/store/                SQLite+FTS5 schema, ingest, and query
 src/cli/                  the agentchats command surface
 src/tui/                  the Signal Room resume picker
-web/                     React/Vite reader, local API, and browser tests
 scripts/install.sh        installer (AgentStart calls this)
 scripts/run-with-timeout  bounded subprocess runner used by the installer
 bin/agentchats            the agentchats CLI entry point, linked into ~/.local/bin

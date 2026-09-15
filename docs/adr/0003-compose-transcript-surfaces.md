@@ -1,6 +1,6 @@
 # 3. Compose transcript surfaces
 
-Status: Accepted
+Status: Superseded for AgentChats by [ADR 0008](0008-retire-the-web-conversation-reader.md)
 Date: 2026-09-13
 
 ## Context

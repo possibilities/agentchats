@@ -31,12 +31,6 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Install reader dependencies
-        run: npm --prefix web ci
-
-      - name: Install Chromium for reader tests
-        run: cd web && npx playwright install --with-deps chromium
-
       - name: Validate shell (same as pre-push)
         run: python3 .githooks/pre-push --check
 
@@ -48,20 +42,6 @@ jobs:
 
       - name: Typecheck
         run: bunx tsc --noEmit
-
-      - name: Check reader types, lint, and production build
-        run: bun run web:check
-
-      - name: Test reader API and browser behavior
-        run: bun run web:test
-
-      - name: Upload reader failure evidence
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: reader-test-results
-          path: web/test-results/
-          if-no-files-found: ignore
 
       - name: Exercise read-only commands
         run: |

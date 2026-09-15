@@ -31,11 +31,6 @@ async function main(argv: string[]): Promise<number> {
       return EXIT.ok;
     }
     const parsed = parseArgs(rest, parserSpec(command));
-    if (name === "serve") {
-      if (parsed.positional.length > 0) throw new UsageError("serve accepts no positional arguments");
-      const { serveReader } = await import("./serve.ts");
-      return await serveReader(process.env, parsed.flags.has("production"));
-    }
     if (name === "mcp") {
       if (parsed.positional.length > 0) throw new UsageError("mcp accepts no positional arguments");
       const { serveAgentchatsMcp } = await import("./mcp.ts");

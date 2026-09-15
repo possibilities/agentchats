@@ -1,6 +1,6 @@
 # 2. Own the web conversation reader
 
-Status: Accepted
+Status: Superseded by [ADR 0008](0008-retire-the-web-conversation-reader.md)
 Date: 2026-09-13
 Updated: 2026-09-13 — Mike approved default editable Vite dev for the always-on service.
 

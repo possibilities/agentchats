@@ -12,12 +12,7 @@
   "scripts": {
     "test": "bun test && node --test test/run-with-timeout.node.mjs",
     "typecheck": "bunx tsc --noEmit",
-    "web:dev": "npm --prefix web run dev",
-    "web:build": "npm --prefix web run build",
-    "web:check": "npm --prefix web run check",
-    "web:test": "npm --prefix web test",
-    "check": "bun run typecheck && bun run test && bun run web:check && bun run web:test",
-    "serve": "./bin/agentchats serve"
+    "check": "bun run typecheck && bun run test"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",
