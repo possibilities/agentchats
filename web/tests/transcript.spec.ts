@@ -350,6 +350,26 @@ test("a windowed polled activity group paints and keeps every child accessible",
     const items = element.closest(".activity-group__items")!.getBoundingClientRect()
     return child.top >= items.top && child.bottom <= items.bottom
   })).toBe(true)
+  const followingOffset = await group.evaluate((element) => {
+    const row = element.closest("[data-windowed-row-key]")!
+    return row.nextElementSibling!.getBoundingClientRect().top -
+      row.getBoundingClientRect().top
+  })
+  await children.first().evaluate((element) => {
+    const items = element.parentElement!
+    items.style.paddingBottom = "37px"
+    items.dispatchEvent(new TransitionEvent("transitionend", { bubbles: true }))
+  })
+  await expect.poll(() => group.evaluate((element) => {
+    const row = element.closest("[data-windowed-row-key]")!
+    return row.nextElementSibling!.getBoundingClientRect().top -
+      row.getBoundingClientRect().top
+  })).toBeGreaterThanOrEqual(followingOffset + 37)
+  await children.first().evaluate((element) => {
+    const items = element.parentElement!
+    items.style.paddingBottom = ""
+    items.dispatchEvent(new TransitionEvent("transitionend", { bubbles: true }))
+  })
   await commandTrigger.click()
   await expect(commandTrigger).toHaveAttribute("aria-expanded", "true")
   await expect(page.getByLabel("Output", { exact: true })).toHaveText(

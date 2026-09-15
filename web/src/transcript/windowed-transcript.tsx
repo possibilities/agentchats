@@ -732,6 +732,17 @@ export function WindowedTranscript<T extends { id: string }>({
               <div
                 key={row.key}
                 ref={virtualizer.measureElement}
+                // WKWebView can miss the panel's final ResizeObserver delivery,
+                // leaving the following absolute row over the last activity.
+                // Base UI exposes the completed disclosure through these events.
+                onTransitionEnd={(event) => {
+                  if (event.target !== event.currentTarget)
+                    virtualizer.measure()
+                }}
+                onAnimationEnd={(event) => {
+                  if (event.target !== event.currentTarget)
+                    virtualizer.measure()
+                }}
                 data-index={virtualRow.index}
                 data-windowed-row-key={row.key}
                 data-slot={
