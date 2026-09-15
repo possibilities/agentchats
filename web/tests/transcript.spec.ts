@@ -256,7 +256,7 @@ test("windowed subagent lifecycle groups keep every detail reachable through pol
   await expect(followupTrigger).toBeVisible()
 })
 
-test("a windowed polled activity group paints and keeps both children accessible", async ({
+test("a windowed polled activity group paints and keeps every child accessible", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 615, height: 947 })
@@ -275,19 +275,25 @@ test("a windowed polled activity group paints and keeps both children accessible
     "interacted",
     "/root/tool_output_recovery",
   )
-  const command: Message = {
-    id: "command-after-interaction",
+  const command = (id: string, detail: string, failed = false): Message => ({
+    id,
     role: "tool",
-    content: "Updated the work status.",
-    status: "complete",
+    content: detail,
+    status: failed ? "error" : "complete",
     toolActivity: {
       name: "Command",
-      detail: "agenthud apply --json …",
-      meta: "exit 0",
-      state: "complete",
-      sections: [{ label: "Output", content: "Work status updated." }],
+      detail,
+      meta: failed ? "exit 1" : "exit 0",
+      state: failed ? "error" : "complete",
+      sections: [{ label: "Output", content: `${detail} output` }],
     },
-  }
+  })
+  const commands = [
+    command("failed-search", "rg missing transcript", true),
+    command("successful-search", "rg transcript"),
+    command("parent-transcript", "python read parent transcript"),
+    command("child-transcript", "python read child transcript"),
+  ]
   const next: Message = {
     id: "agent-after",
     role: "assistant",
@@ -309,23 +315,25 @@ test("a windowed polled activity group paints and keeps both children accessible
 
   await page.evaluate((messages) => {
     ;(window as any).directTranscript.setMessages(messages)
-  }, [lead, interaction, command, next])
+  }, [lead, ...commands.slice(0, 3), interaction, commands[3], next])
   const group = page.locator(".activity-group__trigger")
-  await expect(group).toContainText("2 activities")
+  await expect(group).toContainText("5 activities")
+  await expect(group).toContainText("4 commands · 1 subagent activity")
   await expect(group).toHaveAttribute("aria-expanded", "true")
   await expect(interactionTrigger).toHaveAttribute("aria-expanded", "true")
 
   const commandTrigger = page.locator(".tool-disclosure__trigger", {
-    hasText: "agenthud apply",
+    hasText: "python read child transcript",
   })
+  await commandTrigger.scrollIntoViewIfNeeded()
   await expect(commandTrigger).toBeVisible()
   const children = page.locator(".activity-group__items > *")
-  await expect(children).toHaveCount(2)
+  await expect(children).toHaveCount(5)
   expect(
     await children.evaluateAll((elements) =>
       elements.map((element) => getComputedStyle(element).contentVisibility),
     ),
-  ).toEqual(["visible", "visible"])
+  ).toEqual(Array(5).fill("visible"))
   const overlap = await commandTrigger.evaluate((element) => {
     const child = element.getBoundingClientRect()
     const group = document
@@ -337,18 +345,17 @@ test("a windowed polled activity group paints and keeps both children accessible
     )
   })
   expect(overlap).toBeLessThan(1)
+  expect(await commandTrigger.evaluate((element) => {
+    const child = element.getBoundingClientRect()
+    const items = element.closest(".activity-group__items")!.getBoundingClientRect()
+    return child.top >= items.top && child.bottom <= items.bottom
+  })).toBe(true)
   await commandTrigger.click()
   await expect(commandTrigger).toHaveAttribute("aria-expanded", "true")
   await expect(page.getByLabel("Output", { exact: true })).toHaveText(
-    "Work status updated.",
+    "python read child transcript output",
   )
 
-  await interactionTrigger.scrollIntoViewIfNeeded()
-  await interactionTrigger.click()
-  await expect(interactionTrigger).toHaveAttribute("aria-expanded", "false")
-  await interactionTrigger.focus()
-  await interactionTrigger.press("Enter")
-  await expect(interactionTrigger).toHaveAttribute("aria-expanded", "true")
   await expect(
     page.getByLabel("Agent thread", { exact: true }).filter({
       hasText: "thread-interaction",
@@ -359,8 +366,9 @@ test("a windowed polled activity group paints and keeps both children accessible
     ;(window as any).directTranscript.setMessages(messages)
   }, [
     { ...lead },
+    ...commands.slice(0, 3).map((message) => ({ ...message })),
     { ...interaction },
-    { ...command },
+    { ...commands[3] },
     { ...next },
     {
       id: "agent-poll",
@@ -372,7 +380,7 @@ test("a windowed polled activity group paints and keeps both children accessible
   await expect(group).toHaveAttribute("aria-expanded", "true")
   await expect(interactionTrigger).toHaveAttribute("aria-expanded", "true")
   await expect(commandTrigger).toHaveAttribute("aria-expanded", "true")
-  await page.screenshot({ path: "test-results/polled-two-activities.png" })
+  await page.screenshot({ path: "test-results/polled-five-activities.png" })
 })
 
 test("Human delivery status is announced without changing the source body", async ({
