@@ -220,7 +220,7 @@ describe("ingest", () => {
     const root = storeRoot();
     const db = openIndex(MEMORY_INDEX);
     const alpha = write(join(root, "alpha.jsonl"), "{}");
-    const beta = write(join(root, "beta.jsonl.zst"), "{}");
+    const beta = write(join(root, "beta.jsonl"), "{}");
     const outcomes = new Map<string, Outcome>([
       [alpha, parsed({ sourcePath: alpha, messages: [line(0, "user", "one widget")] })],
       [
@@ -349,7 +349,88 @@ describe("ingest", () => {
     db.close();
   });
 
-  test("a transcript with nothing indexable is a skip, and drops any stale row", async () => {
+  test("a deferred oversized source is never read and disables disappearance pruning", async () => {
+    const root = storeRoot();
+    const db = openIndex(MEMORY_INDEX);
+    const active = write(join(root, "active.jsonl"), "a", new Date(1_700_000_000_000));
+    const vanished = write(join(root, "vanished.jsonl"), "b", new Date(1_700_000_000_000));
+    const outcomes = new Map<string, Outcome>([
+      [active, parsed({ sourcePath: active, sessionId: "active" })],
+      [vanished, parsed({ sourcePath: vanished, sessionId: "vanished" })],
+    ]);
+    const parsers = bindings(root, outcomes);
+    await ingest(db, { roots: [root], parsers });
+
+    rmSync(vanished);
+    write(active, "too large", new Date(1_700_000_600_000));
+    let reads = 0;
+    parsers.claude_code!.read = async () => { reads++; return "must not be read"; };
+    const result = await ingest(db, { roots: [root], parsers, maxSourceBytes: 4 });
+
+    expect(reads).toBe(0);
+    expect(result).toMatchObject({
+      deferred: 1, removed: 0, complete: false, pruning: "withheld",
+      deferrals: [{ path: active, reason: "source_too_large", bytes: 9 }],
+    });
+    expect(sessions(db, { limit: 10 }).map((row) => row.sessionId).sort()).toEqual([
+      "active", "vanished",
+    ]);
+    db.close();
+  });
+
+  test("forced reparsing preserves the old row when the source is deferred", async () => {
+    const root = storeRoot();
+    const db = openIndex(MEMORY_INDEX);
+    const path = write(join(root, "session.jsonl"), "safe");
+    const outcomes = new Map<string, Outcome>([[path, parsed({ sourcePath: path })]]);
+    const parsers = bindings(root, outcomes);
+    await ingest(db, { roots: [root], parsers });
+    let reads = 0;
+    parsers.claude_code!.read = async () => { reads++; return "must not be read"; };
+
+    const result = await ingest(db, { roots: [root], parsers, force: true, maxSourceBytes: 1 });
+    expect(result).toMatchObject({ deferred: 1, removed: 0, complete: false });
+    expect(reads).toBe(0);
+    expect(found(db, { query: "widget", limit: 10 })).toHaveLength(1);
+    db.close();
+  });
+
+  test("a parse failure disables pruning elsewhere in the same pass", async () => {
+    const root = storeRoot();
+    const db = openIndex(MEMORY_INDEX);
+    const changed = write(join(root, "changed.jsonl"), "a", new Date(1_700_000_000_000));
+    const vanished = write(join(root, "vanished.jsonl"), "b", new Date(1_700_000_000_000));
+    const outcomes = new Map<string, Outcome>([
+      [changed, parsed({ sourcePath: changed, sessionId: "changed" })],
+      [vanished, parsed({ sourcePath: vanished, sessionId: "vanished" })],
+    ]);
+    const parsers = bindings(root, outcomes);
+    await ingest(db, { roots: [root], parsers });
+    rmSync(vanished);
+    write(changed, "aa", new Date(1_700_000_600_000));
+    outcomes.set(changed, "throw");
+
+    const result = await ingest(db, { roots: [root], parsers });
+    expect(result).toMatchObject({ failed: 1, removed: 0, complete: false, pruning: "withheld" });
+    expect(sessions(db, { limit: 10 })).toHaveLength(2);
+    db.close();
+  });
+
+  test("failure telemetry is bounded while retaining the total", async () => {
+    const root = storeRoot();
+    const db = openIndex(MEMORY_INDEX);
+    const outcomes = new Map<string, Outcome>();
+    for (let index = 0; index < 25; index++) {
+      const path = write(join(root, `${index}.jsonl`), "{}");
+      outcomes.set(path, "throw");
+    }
+    const result = await ingest(db, { roots: [root], parsers: bindings(root, outcomes) });
+    expect(result).toMatchObject({ failed: 25, failuresOmitted: 5, complete: false });
+    expect(result.failures).toHaveLength(20);
+    db.close();
+  });
+
+  test("an empty parse is deferred and keeps the existing searchable row", async () => {
     const root = storeRoot();
     const db = openIndex(MEMORY_INDEX);
     const path = write(join(root, "a.jsonl"), "{}", new Date(1_700_000_000_000));
@@ -360,8 +441,12 @@ describe("ingest", () => {
     outcomes.set(path, null);
     const result = await ingest(db, { roots: [root], parsers: bindings(root, outcomes) });
 
-    expect(result).toMatchObject({ scanned: 1, indexed: 0, skipped: 1, removed: 1, failed: 0 });
-    expect(db.query("SELECT COUNT(*) AS n FROM sessions").get()).toEqual({ n: 0 });
+    expect(result).toMatchObject({
+      scanned: 1, indexed: 0, skipped: 0, removed: 0, failed: 0,
+      deferred: 1, complete: false, pruning: "withheld",
+    });
+    expect(result.deferrals).toEqual([{ path, reason: "empty_parse", bytes: 0 }]);
+    expect(db.query("SELECT COUNT(*) AS n FROM sessions").get()).toEqual({ n: 1 });
     expect(ftsIsConsistent(db)).toBe(true);
     db.close();
   });
@@ -388,6 +473,34 @@ describe("ingest", () => {
     // The dropped transcript is not re-ingested on the next bounded run.
     const again = await ingest(db, { roots: [root], parsers, retainDays: 30, now: () => now });
     expect(again).toMatchObject({ indexed: 0, removed: 0 });
+    db.close();
+  });
+
+  test("retainDays in a narrow-root pass cannot prune an omitted root", async () => {
+    const parent = storeRoot();
+    const included = join(parent, "included");
+    const omitted = join(parent, "omitted");
+    mkdirSync(included);
+    mkdirSync(omitted);
+    const db = openIndex(MEMORY_INDEX);
+    const now = new Date("2026-09-01T00:00:00.000Z");
+    const fresh = write(join(included, "fresh.jsonl"), "{}", new Date("2026-08-30T00:00:00.000Z"));
+    const old = write(join(omitted, "old.jsonl"), "{}", new Date("2026-05-01T00:00:00.000Z"));
+    const outcomes = new Map<string, Outcome>([
+      [fresh, parsed({ sourcePath: fresh, sessionId: "fresh", updatedAt: "2026-08-30T00:00:00.000Z" })],
+      [old, parsed({ sourcePath: old, sessionId: "old", updatedAt: "2026-05-01T00:00:00.000Z" })],
+    ]);
+    const parsers = {
+      included: bindings(included, outcomes).claude_code!,
+      omitted: bindings(omitted, outcomes).claude_code!,
+    };
+    await ingest(db, { roots: [included, omitted], parsers, now: () => now });
+
+    const report = await ingest(db, {
+      roots: [included], parsers, retainDays: 30, now: () => now,
+    });
+    expect(report).toMatchObject({ complete: true, removed: 0 });
+    expect(sessions(db, { limit: 10 }).map((row) => row.sessionId).sort()).toEqual(["fresh", "old"]);
     db.close();
   });
 
@@ -431,7 +544,7 @@ describe("ingest", () => {
     second.close();
   });
 
-  test("walks nested directories and both transcript extensions", async () => {
+  test("walks nested directories and defers compressed transcripts before reading", async () => {
     const root = storeRoot();
     const nested = join(root, "projects", "deep");
     mkdirSync(nested, { recursive: true });
@@ -443,8 +556,16 @@ describe("ingest", () => {
       [plain, parsed({ sourcePath: plain })],
       [zstd, parsed({ sourcePath: zstd, sessionId: "b" })],
     ]);
-    const result = await ingest(db, { roots: [root], parsers: bindings(root, outcomes) });
-    expect(result).toMatchObject({ scanned: 2, indexed: 2 });
+    let compressedReads = 0;
+    const parsers = bindings(root, outcomes);
+    parsers.claude_code!.read = async (path) => {
+      if (path.endsWith(".zst")) compressedReads++;
+      return path;
+    };
+    const result = await ingest(db, { roots: [root], parsers });
+    expect(result).toMatchObject({ scanned: 2, indexed: 1, deferred: 1, complete: false });
+    expect(result.deferrals[0]).toMatchObject({ path: zstd, reason: "compressed_source" });
+    expect(compressedReads).toBe(0);
     db.close();
   });
 });
@@ -482,7 +603,7 @@ async function corpus(): Promise<Database> {
     originator: null,
     messages: [line(0, "user", "widget alpha")],
   });
-  add("codex.jsonl.zst", {
+  add("codex.jsonl", {
     agent: "codex",
     sessionId: "codex-one",
     workspace: "/ws/beta",
@@ -536,7 +657,7 @@ describe("search", () => {
       threadSource: "user",
       originator: "codex_cli_rs",
     });
-    expect(hit?.sourcePath).toMatch(/codex\.jsonl\.zst$/);
+    expect(hit?.sourcePath).toMatch(/codex\.jsonl$/);
     expect(hit?.snippet).toContain("[backlog]");
     db.close();
   });
@@ -645,7 +766,7 @@ describe("sessions", () => {
       threadSource: "user",
       originator: "codex_cli_rs",
     });
-    expect(rows[1]?.path).toMatch(/codex\.jsonl\.zst$/);
+    expect(rows[1]?.path).toMatch(/codex\.jsonl$/);
     // Claude Code records neither, and null must survive the round trip
     // rather than arriving as "" — the picker distinguishes the two.
     expect(rows[0]).toMatchObject({ threadSource: null, originator: null });

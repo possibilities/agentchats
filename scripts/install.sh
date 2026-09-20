@@ -75,7 +75,7 @@ agentchats:
   bun on PATH is required (installed by AgentStart)
   (cd $repo_root && bun install --frozen-lockfile)           # resolve the complete pinned CLI, TUI, and MCP dependencies before linking
   ln -sfn $repo_root/bin/agentchats $dest_dir/agentchats      # only after dependencies succeed
-  scripts/run-with-timeout ${index_timeout_seconds}s ... agentchats index   # incremental when the index exists; safe to rerun
+  scripts/run-with-timeout ${index_timeout_seconds}s ... agentchats index   # guarded incremental preparation; resource/busy deferral leaves the installed CLI usable
 EOF
         exit 0
         ;;
@@ -118,8 +118,15 @@ ln -sfn "$repo_root/bin/agentchats" "$dest_dir/agentchats"
 # safe to rerun; bounded so a stuck rebuild cannot hang the installer or
 # leave an orphaned process behind.
 printf 'Preparing the session index.\n'
-run_with_timeout "$index_timeout_seconds" "agentchats index" \
-    "$dest_dir/agentchats" index \
-    || die "agentchats index failed; investigate with: agentchats index"
-
-printf 'agentchats is installed; its session index is ready.\n'
+export AGENTCHATS_INVOCATION_ORIGIN=installer
+if run_with_timeout "$index_timeout_seconds" "agentchats index" \
+    "$dest_dir/agentchats" index; then
+    printf 'agentchats is installed; its session index is ready.\n'
+else
+    status=$?
+    if [ "$status" -eq 75 ]; then
+        printf 'agentchats is installed; index preparation incomplete/deferred. Inspect with: agentchats status\n'
+        exit 0
+    fi
+    die "agentchats index failed; investigate with: agentchats index"
+fi

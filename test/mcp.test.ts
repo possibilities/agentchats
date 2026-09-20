@@ -270,7 +270,7 @@ describe("Chats producer MCP", () => {
     await wire.stop();
   });
 
-  test("returns the original partial-index report as an error without losing successful work", async () => {
+  test("reports unsupported compressed input as deferred without losing successful work", async () => {
     const malformed = join(directory, ".codex/sessions/broken.jsonl.zst");
     writeFileSync(malformed, "not-zstd");
     const wire = await peer();
@@ -279,9 +279,14 @@ describe("Chats producer MCP", () => {
     const report = value(indexed);
     expect(report.success).toBe(false);
     expect(report.indexed).toBe(1);
-    expect(report.failed).toBe(1);
-    expect(report.failures[0].path).toBe(malformed);
+    expect(report.failed).toBe(0);
+    expect(report.deferred).toBe(1);
+    expect(report.deferrals[0]).toMatchObject({ path: malformed, reason: "compressed_source" });
+    expect(report.pruning).toBe("withheld");
     expect(value(await wire.call("search", { query: "widget" })).count).toBe(1);
+    const diagnosis = value(await wire.call("status"));
+    expect(diagnosis.lastAttempt).toMatchObject({ outcome: "deferred", complete: false });
+    expect(diagnosis.complete).toBe(false);
     await wire.stop();
   });
 
@@ -327,6 +332,12 @@ describe("Chats producer MCP", () => {
       await Bun.sleep(30);
       expect(count()).toBe(stopped);
     } finally { db.close(); }
+    const cancelled = value(await wire.call("status")).lastAttempt;
+    expect(cancelled).toMatchObject({
+      outcome: "cancelled", complete: false, pruning: "withheld",
+    });
+    expect(cancelled.indexed).toBeGreaterThan(0);
+    expect(cancelled.sourceBytesRead).toBe(null);
     await wire.stop();
   });
 

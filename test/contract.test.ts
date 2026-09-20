@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, renameSync, rmSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, renameSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openIndex } from "../src/store/schema.ts";
@@ -154,7 +154,13 @@ describe("the contract the chats skill documents", () => {
         // And a file genuinely deleted from a root that IS readable still goes.
         rmSync(join(live, "a.jsonl"));
         const pruned = await ingest(db, sources);
-        expect(pruned.removed).toBe(1);
+        expect(pruned).toMatchObject({ removed: 0, complete: false, pruning: "withheld" });
+        expect(rows()).toBe(3);
+
+        // Pruning resumes only after every configured root has complete coverage.
+        renameSync(`${removable}-gone`, removable);
+        const reconciled = await ingest(db, sources);
+        expect(reconciled).toMatchObject({ removed: 1, complete: true, pruning: "applied" });
         expect(rows()).toBe(2);
       } finally {
         db.close();
@@ -188,11 +194,17 @@ describe("the contract the chats skill documents", () => {
       const db = openIndex(join(root, "index.db"));
       try {
         const before = pendingWork(db, sources);
-        expect(before).toEqual({ scanned: 1, pending: 1, vanished: 0, unavailableRoots: [] });
+        expect(before).toEqual({
+          scanned: 1, pending: 1, vanished: 0, unavailableRoots: [], incompleteRoots: [],
+          deferred: 0, deferredBytes: 0, complete: true,
+          coverage: [{ root: store, status: "complete", errors: 0 }],
+        });
 
         await ingest(db, sources);
         expect(pendingWork(db, sources)).toEqual({
-          scanned: 1, pending: 0, vanished: 0, unavailableRoots: [],
+          scanned: 1, pending: 0, vanished: 0, unavailableRoots: [], incompleteRoots: [],
+          deferred: 0, deferredBytes: 0, complete: true,
+          coverage: [{ root: store, status: "complete", errors: 0 }],
         });
 
         rmSync(path);
@@ -207,6 +219,41 @@ describe("the contract the chats skill documents", () => {
         db.close();
       }
     } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("an unreadable nested subtree makes coverage incomplete and withholds all pruning", async () => {
+    const root = mkdtempSync(join(tmpdir(), "agentchats-subtree-"));
+    const store = join(root, "store");
+    const nested = join(store, "nested");
+    mkdirSync(nested, { recursive: true });
+    const visible = join(store, "visible.jsonl");
+    const hidden = join(nested, "hidden.jsonl");
+    await Bun.write(visible, "{}\n");
+    await Bun.write(hidden, "{}\n");
+    const parse = (_content: string, path: string): ParsedSession => ({
+      agent: "claude_code", sessionId: path, sourcePath: path, workspace: "/w", title: path,
+      createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z",
+      threadSource: null, originator: null,
+      messages: [{ ordinal: 0, line: 1, byteOffset: 0, role: "user", ts: "", body: path, truncated: false }],
+    });
+    const sources = {
+      roots: [store],
+      parsers: { claude_code: { root: store, parse, read: async () => "{}" } },
+    };
+    const db = openIndex(join(root, "index.db"));
+    try {
+      await ingest(db, sources);
+      rmSync(visible);
+      chmodSync(nested, 0);
+      const report = await ingest(db, sources);
+      expect(report).toMatchObject({ removed: 0, complete: false, pruning: "withheld" });
+      expect(report.incompleteRoots).toEqual([store]);
+      expect((db.query("SELECT COUNT(*) AS count FROM sessions").get() as { count: number }).count).toBe(2);
+    } finally {
+      chmodSync(nested, 0o700);
+      db.close();
       rmSync(root, { recursive: true, force: true });
     }
   });

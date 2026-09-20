@@ -6,7 +6,7 @@ import { parseClaude } from "../src/parse/claude.ts";
 import { parseCodex } from "../src/parse/codex.ts";
 import type { ParsedSession } from "../src/parse/types.ts";
 import { openIndex } from "../src/store/schema.ts";
-import { ingest } from "../src/store/ingest.ts";
+import { ingest, LEGACY_SOURCE_LIMIT_BYTES } from "../src/store/ingest.ts";
 import { search } from "../src/store/query.ts";
 
 /**
@@ -53,7 +53,10 @@ function walk(dir: string, out: string[] = []): string[] {
 function sample(root: string, count: number): string[] {
   const usable = walk(root)
     .map((path) => ({ path, size: statSync(path).size }))
-    .filter((entry) => entry.size > 32_000)
+    // Stage 1 deliberately retains the whole-file parser only below its
+    // allocation fence. Parity samples the supported legacy slice; deferred
+    // giant sources belong to the later streaming suite.
+    .filter((entry) => entry.size > 32_000 && entry.size <= LEGACY_SOURCE_LIMIT_BYTES)
     .sort((a, b) => (a.path < b.path ? -1 : 1));
   if (usable.length <= count) return usable.map((entry) => entry.path);
   const stride = Math.floor(usable.length / count);

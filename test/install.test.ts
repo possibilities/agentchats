@@ -12,7 +12,7 @@ beforeEach(() => {
   for (const path of ["repo/scripts", "repo/bin", "repo/node_modules/@opentui/core", "fake-bin", "home"]) mkdirSync(join(root, path), { recursive: true });
   for (const file of ["install.sh", "run-with-timeout"]) copyFileSync(resolve(import.meta.dir, "../scripts", file), join(repo, "scripts", file));
   writeFileSync(join(root, "fake-bin/bun"), '#!/bin/bash\nprintf "deps:%s\\n" "$*" >> "$AGENTCHATS_TEST_INSTALL_LOG"\n[ "${AGENTCHATS_TEST_FAIL_INSTALL:-0}" != 1 ]\n', { mode: 0o755 });
-  writeFileSync(join(repo, "bin/agentchats"), '#!/bin/bash\nprintf "cli:%s\\n" "$*" >> "$AGENTCHATS_TEST_INSTALL_LOG"\n', { mode: 0o755 });
+  writeFileSync(join(repo, "bin/agentchats"), '#!/bin/bash\nprintf "cli:%s\\n" "$*" >> "$AGENTCHATS_TEST_INSTALL_LOG"\nexit "${AGENTCHATS_TEST_INDEX_EXIT:-0}"\n', { mode: 0o755 });
   env = { ...process.env, HOME: join(root, "home"), PATH: `${join(root, "fake-bin")}:${process.env["PATH"] ?? ""}`, AGENTCHATS_TEST_INSTALL_LOG: join(root, "calls") };
 });
 afterEach(() => rmSync(root, { recursive: true, force: true }));
@@ -47,4 +47,12 @@ test("dependency failure preserves the existing command and does not start an in
   expect(readlinkSync(target)).toBe(previous);
   expect(readFileSync(previous, "utf8")).toBe("old command");
   expect(readFileSync(join(root, "calls"), "utf8")).toBe("deps:install --frozen-lockfile\n");
+});
+
+test("a contained index deferral still installs the CLI and reports incomplete preparation", async () => {
+  env["AGENTCHATS_TEST_INDEX_EXIT"] = "75";
+  const result = await run("--install");
+  expect(result.code).toBe(0);
+  expect(result.stdout).toContain("agentchats is installed; index preparation incomplete/deferred");
+  expect(readlinkSync(join(root, "home/.local/bin/agentchats"))).toBe(join(repo, "bin/agentchats"));
 });

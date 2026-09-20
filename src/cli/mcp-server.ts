@@ -31,6 +31,7 @@ export function createAgentchatsMcpServer(env = process.env) {
             invocationFor(tool, (args ?? {}) as Record<string, unknown>),
             fixedEnv,
             {
+              origin: "mcp",
               signal,
               ...(token === undefined ? {} : {
                 onProgress: (event: { handled: number; total: number }) => {
@@ -50,7 +51,7 @@ export function createAgentchatsMcpServer(env = process.env) {
             ...(ok ? {} : { isError: true }),
             structuredContent: output.value,
             content: [
-              ...(!ok ? [{ type: "text" as const, text: "The index pass reported failures. Completed session transactions remain indexed; inspect failures before retrying." }] : []),
+              ...(!ok ? [{ type: "text" as const, text: "The index pass was deferred or incomplete. Prior searchable rows and completed replacements remain indexed; inspect ownership/resource deferrals, source deferrals, coverage, and failures before retrying." }] : []),
               { type: "text", text: JSON.stringify(output.value, null, 2) },
             ],
           };

@@ -27,11 +27,17 @@ small `budget`. It returns Markdown and no text when that workspace has no
 sessions. Shared MCP processes cannot infer the caller's current directory.
 
 When freshness matters, inspect `status`: `healthy:false` means the index
-needs preparation; `stale:true` means transcripts changed or disappeared.
-An incremental `index` reconciles them. Inspect its `success` and `failures`,
-including when some sessions were indexed. `unavailableRoots` were not
-refreshed, and their existing sessions remain searchable. Cancellation stops
-an unfinished pass without final pruning and keeps completed transactions.
+needs preparation; `stale:true` means transcripts changed, disappeared, or a
+previous attempt was incomplete. Inspect `complete`, `deferred`, `coverage`,
+`incompleteRoots`, `lastAttempt`, and `lastSuccessfulCompleteReconciliation`.
+An incremental `index` reconciles work only when its writer and resource
+preflight passes. Stage 1 deliberately defers changed compressed sources and
+sources over 16 MiB before reading their bodies; a later streaming stage will
+cover them. Inspect `success`, `outcome`, `runDeferrals`, `deferrals`, and
+`failures`, including when some safe sessions were indexed. Incomplete roots,
+parses, cancellation, and deferred sources preserve existing searchable rows
+and withhold every pruning path. `--full` forces safe reparsing through that
+same preservation path; it does not discard the existing index first.
 
 ## Search, then inspect evidence
 

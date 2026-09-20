@@ -9,6 +9,20 @@ import { indexPath } from "../store/paths.ts";
 import { openIndex } from "../store/schema.ts";
 import { ingest, type IngestProgress, type ParserBinding, pendingWork } from "../store/ingest.ts";
 import {
+  acquireWriter,
+  type InvocationOrigin,
+  resourcePreflight,
+  type ResourcePreflight,
+} from "../store/containment.ts";
+import {
+  readIngestAttemptSidecar,
+  readIngestTelemetry,
+  summarizeAttempt,
+  writeIngestAttempt,
+  writeIngestAttemptSidecar,
+  type IngestAttemptSummary,
+} from "../store/telemetry.ts";
+import {
   aggregate,
   type AggregateDimension,
   type SearchHit,
@@ -115,7 +129,7 @@ function filters(values: {
  * stdout so callers can branch on the exit code and then on `error.code`.
  */
 
-export const EXIT = { ok: 0, error: 1, missingIndex: 3, usage: 64 } as const;
+export const EXIT = { ok: 0, error: 1, missingIndex: 3, usage: 64, deferred: 75 } as const;
 
 export class CliError extends Error {
   constructor(
@@ -182,37 +196,168 @@ async function commandIndex(
   context: CommandContext,
 ): Promise<CommandOutput> {
   const path = indexPath(env);
-  if (parsed.flags.has("full")) {
-    for (const suffix of ["", "-wal", "-shm"]) {
-      context.signal?.throwIfAborted();
-      try {
-        await Bun.file(`${path}${suffix}`).delete();
-      } catch {
-        // Full rebuild removes only the derived database, never transcripts.
-      }
-    }
+  const origin: InvocationOrigin = context.origin ??
+    (env["AGENTCHATS_INVOCATION_ORIGIN"] === "installer" ? "installer" : "cli");
+  const startedAt = new Date().toISOString();
+  const lease = acquireWriter(path, origin);
+  if (!lease.acquired) {
+    const value = deferredIndexResult(startedAt, origin, [lease.reason]);
+    return result(value, () => "index deferred: another writer owns this session index\n", EXIT.deferred);
   }
-  context.signal?.throwIfAborted();
-  const db = openIndex(path);
   try {
-    const retainDays = parsed.values["retain-days"];
-    const report = await ingest(db, {
-      ...liveSources(env, (await loadAgentchatsConfig(env)).archives),
-      ...(retainDays === undefined ? {} : { retainDays: integer(parsed, "retain-days", 0) }),
-      ...(context.signal ? { signal: context.signal } : {}),
-      ...(context.onProgress ? { onProgress: context.onProgress } : {}),
-    });
-    return result(
-      { success: report.failed === 0, ...report },
-      () => `indexed ${report.indexed}, skipped ${report.skipped}, removed ${report.removed}` +
-        (report.failed > 0 ? `, failed ${report.failed}` : "") +
-        ` (${report.scanned} scanned)\n` +
-        report.unavailableRoots.map((root) => `unavailable, left untouched: ${root}\n`).join(""),
-      report.failed > 0 && report.indexed === 0 ? EXIT.error : EXIT.ok,
-    );
+    context.signal?.throwIfAborted();
+    const resource = (context.resourcePreflight ?? resourcePreflight)(path, origin);
+    if (!resource.ok) {
+      const attempt = emptyAttempt({
+        startedAt,
+        origin,
+        owner: lease.owner,
+        resource,
+        outcome: "deferred",
+        deferredByReason: Object.fromEntries(resource.reasons.map((reason) => [reason, 1])),
+      });
+      const telemetryPersisted = writeIngestAttemptSidecar(path, attempt);
+      const value = { ...deferredIndexResult(startedAt, origin, resource.reasons, resource), telemetryPersisted };
+      return result(
+        value,
+        () => `index deferred: ${resource.reasons.join(", ")}\n`,
+        EXIT.deferred,
+      );
+    }
+    context.signal?.throwIfAborted();
+    const db = openIndex(path);
+    try {
+      const retainDays = parsed.values["retain-days"];
+      const observed = { total: 0, indexed: 0, skipped: 0, deferred: 0, failed: 0 };
+      try {
+        const report = await ingest(db, {
+          ...liveSources(env, (await loadAgentchatsConfig(env)).archives),
+          force: parsed.flags.has("full"),
+          ...(retainDays === undefined ? {} : { retainDays: integer(parsed, "retain-days", 0) }),
+          ...(context.signal ? { signal: context.signal } : {}),
+          onProgress: (event) => {
+            observed.total = event.total;
+            observed[event.outcome]++;
+            context.onProgress?.(event);
+          },
+        });
+        const telemetry = summarizeAttempt(report, {
+          startedAt,
+          finishedAt: new Date().toISOString(),
+          origin,
+          owner: lease.owner,
+          resource,
+        });
+        writeIngestAttempt(db, telemetry);
+        writeIngestAttemptSidecar(path, telemetry);
+        const success = report.complete && report.failed === 0;
+        return result(
+          { success, runDeferrals: [], resource, ...report },
+          () => `indexed ${report.indexed}, skipped ${report.skipped}, removed ${report.removed}` +
+            (report.deferred > 0 ? `, deferred ${report.deferred}` : "") +
+            (report.failed > 0 ? `, failed ${report.failed}` : "") +
+            ` (${report.scanned} scanned; ${report.complete ? "complete" : "incomplete"})\n` +
+            report.unavailableRoots.map((root) => `unavailable, left untouched: ${root}\n`).join(""),
+          report.complete ? EXIT.ok : EXIT.deferred,
+        );
+      } catch (error) {
+        const cancelled = context.signal?.aborted === true;
+        const attempt = emptyAttempt({
+          startedAt,
+          origin,
+          owner: lease.owner,
+          resource,
+          outcome: cancelled ? "cancelled" : "failed",
+          scanned: observed.total,
+          indexed: observed.indexed,
+          skipped: observed.skipped,
+          deferred: observed.deferred,
+          failed: observed.failed + (cancelled ? 0 : 1),
+          error: (error instanceof Error ? error.message : String(error)).slice(0, 512),
+        });
+        writeIngestAttempt(db, attempt);
+        writeIngestAttemptSidecar(path, attempt);
+        throw error;
+      }
+    } finally {
+      db.close();
+    }
   } finally {
-    db.close();
+    lease.release();
   }
+}
+
+function emptyAttempt(details: {
+  startedAt: string;
+  origin: string;
+  owner: { pid: number; startedAt: string };
+  resource: ResourcePreflight;
+  outcome: IngestAttemptSummary["outcome"];
+  scanned?: number;
+  indexed?: number;
+  skipped?: number;
+  deferred?: number;
+  failed?: number;
+  deferredByReason?: Record<string, number>;
+  error?: string;
+}): IngestAttemptSummary {
+  return {
+    startedAt: details.startedAt,
+    finishedAt: new Date().toISOString(),
+    origin: details.origin,
+    owner: { pid: details.owner.pid, startedAt: details.owner.startedAt },
+    outcome: details.outcome,
+    complete: false,
+    indexed: details.indexed ?? 0,
+    skipped: details.skipped ?? 0,
+    removed: 0,
+    failed: details.failed ?? 0,
+    deferred: details.deferred ?? 0,
+    scanned: details.scanned ?? 0,
+    sourceBytesConsidered: null,
+    sourceBytesRead: null,
+    elapsedMs: Date.now() - Date.parse(details.startedAt),
+    pruning: "withheld",
+    deferredByReason: details.deferredByReason ?? {},
+    incompleteRoots: [],
+    resource: details.resource,
+    ...(details.error === undefined ? {} : { error: details.error }),
+  };
+}
+
+function deferredIndexResult(
+  startedAt: string,
+  origin: InvocationOrigin,
+  runDeferrals: string[],
+  resource?: ResourcePreflight,
+): Record<string, unknown> {
+  return {
+    success: false,
+    complete: false,
+    outcome: "deferred",
+    origin,
+    startedAt,
+    finishedAt: new Date().toISOString(),
+    runDeferrals,
+    ...(resource ? { resource } : {}),
+    scanned: 0,
+    indexed: 0,
+    skipped: 0,
+    removed: 0,
+    failed: 0,
+    failures: [],
+    failuresOmitted: 0,
+    deferred: 0,
+    deferrals: [],
+    deferralsOmitted: 0,
+    pruning: "withheld",
+    coverage: [],
+    sourceBytesConsidered: 0,
+    sourceBytesRead: 0,
+    elapsedMs: 0,
+    unavailableRoots: [],
+    incompleteRoots: [],
+  };
 }
 
 async function commandStatus(
@@ -224,22 +369,43 @@ async function commandStatus(
   try {
     const work = pendingWork(db, liveSources(env, (await loadAgentchatsConfig(env)).archives));
     const state = status(db);
+    const storedTelemetry = readIngestTelemetry(db);
+    const sidecarAttempt = readIngestAttemptSidecar(indexPath(env));
+    const lastAttempt = [storedTelemetry.lastAttempt, sidecarAttempt]
+      .filter((attempt): attempt is IngestAttemptSummary => attempt !== null)
+      .sort((left, right) => right.finishedAt.localeCompare(left.finishedAt))[0] ?? null;
+    const completeCandidates = [
+      storedTelemetry.lastSuccessfulCompleteReconciliation,
+      sidecarAttempt?.complete === true ? sidecarAttempt.finishedAt : null,
+    ].filter((value): value is string => value !== null);
+    const telemetry = {
+      lastAttempt,
+      lastSuccessfulCompleteReconciliation: completeCandidates.sort().at(-1) ?? null,
+    };
     const report = {
       ...state,
+      ...telemetry,
       path: indexPath(env),
       healthy: state.sessions > 0,
-      stale: work.pending > 0 || work.vanished > 0,
+      stale: work.pending > 0 || work.vanished > 0 || !work.complete ||
+        telemetry.lastAttempt?.complete === false,
       pending: work.pending,
       vanished: work.vanished,
       scanned: work.scanned,
+      deferred: work.deferred,
+      deferredBytes: work.deferredBytes,
+      complete: work.complete && telemetry.lastAttempt?.complete !== false,
+      coverage: work.coverage,
       unavailableRoots: work.unavailableRoots,
+      incompleteRoots: work.incompleteRoots,
     };
     return result(report, () =>
       `${report.sessions} sessions, ${report.messages} messages, ` +
       `${(report.bytes / 1e6).toFixed(0)} MB at ${report.path}\n` +
       `newest indexed session: ${report.newestSession ?? "(none)"}\n` +
       (report.stale
-        ? `stale: ${report.pending} to index, ${report.vanished} to drop — run: agentchats index\n`
+        ? `stale/incomplete: ${report.pending} to index (${report.deferred} preflight-deferred), ` +
+          `${report.vanished} to drop when coverage is complete — run: agentchats index\n`
         : "fresh\n") +
       report.unavailableRoots.map((root) => `unavailable: ${root}\n`).join(""));
   } finally {
@@ -491,6 +657,9 @@ function commandState(parsed: Parsed, env: Record<string, string | undefined>): 
 export interface CommandContext {
   signal?: AbortSignal;
   onProgress?: (progress: IngestProgress) => void;
+  origin?: InvocationOrigin;
+  /** Deterministic test seam; production callers use the native preflight. */
+  resourcePreflight?: (path: string, origin: InvocationOrigin) => ResourcePreflight;
 }
 
 export interface CommandOutput {

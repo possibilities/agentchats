@@ -28,6 +28,11 @@ supersedes AgentChats' web-reader and shared-presentation ownership. The browser
 UI moves to AgentVoice; AgentChats retains indexing, evidence reads, CLI/MCP,
 native resume commands, and the OpenTUI picker.
 
+[0009: Contain legacy ingest before streaming](0009-contain-legacy-ingest.md)
+adds one writer lease, resource and source allocation fences, conservative
+coverage-gated pruning, durable bounded attempt status, and non-destructive
+forced reparsing while the later streaming/checkpoint design remains pending.
+
 ## Withdrawn viewer experiment
 
 The earlier `0001-viewer-on-vendored-opencode-renderer.md` belonged to a

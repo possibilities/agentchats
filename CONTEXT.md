@@ -18,6 +18,13 @@ written or changed since the last run; `--full` reprocesses everything.
 _Avoid_: crawl, scan (ingest names the read-and-index step specifically,
 not a bare filesystem walk).
 
+**ingest containment** — the Stage 1 fence around the legacy whole-source
+parser: one canonical writer, resource preflight, a 16 MiB plain-source limit,
+explicit deferral, and pruning only after complete coverage. Search can remain
+usable over prior rows while status truthfully says incomplete. _Avoid_: bounded
+ingest (streaming, checkpoints, and bounded parser state are later stages),
+failed index (a deliberate deferral is not a parser or database failure).
+
 **message** — the atomic unit the session index stores one row per: a
 single turn — user, assistant, or tool — inside a transcript. A search hit
 resolves to one message's `source_path` and `line`. _Avoid_: turn,

@@ -39,7 +39,7 @@ export function agentTools() {
       arguments: args,
       title: command.summary,
       description: [
-        ...(command.blocking ? ["Blocks: a large index pass can take time; cancellation stops between completed session transactions."] : []),
+        ...(command.blocking ? ["Blocks: a safe legacy index pass can take time; ownership/resource/source preflight may defer it, and cancellation stops between completed session transactions."] : []),
         command.summary,
         `Runs the shared agentchats ${command.name} handler in this process.`,
         ...(command.guidance ? [command.guidance] : []),
@@ -79,8 +79,8 @@ export function serverInstructions(): string {
   return [
     CONTRACT.guidance,
     ...Object.values(CONTRACT.concepts.output_contract.envelope),
-    "MCP preserves each JSON object in structuredContent and standalone JSON text. Markdown remains plain text. Errors set isError and preserve the original {error:{code,message,hint}} object; diagnostic prose is separate. An incomplete index report also sets isError while retaining its original success:false and failures fields.",
-    "Index progress is available through MCP progress notifications when the caller supplies a progress token. Cancellation or connection shutdown stops the pass between complete session transactions and skips final pruning; completed work is retained. Calls in this server run sequentially so a rebuild cannot race its own readers.",
+    "MCP preserves each JSON object in structuredContent and standalone JSON text. Markdown remains plain text. Errors set isError and preserve the original {error:{code,message,hint}} object; diagnostic prose is separate. A deferred or incomplete index report also sets isError while retaining its original success:false, coverage, deferral, and failure fields.",
+    "Index progress is available through MCP progress notifications when the caller supplies a progress token. One canonical writer lease also excludes CLI and installer contenders. Cancellation or connection shutdown stops the pass between complete session transactions and skips final pruning; completed work and the prior rows of unfinished sources are retained.",
     "The process uses one startup environment to select its index, transcript roots, and archive configuration file. Tools do not accept HOME, database, or credential overrides. Supply an explicit absolute workspace for state; sessions uses workspace instead of the terminal-only current flag.",
     ...CONTRACT.concepts.error_codes.map((error) => `${error.code}: ${error.meaning}. ${error.recovery}`),
     ...CONTRACT.concepts.agent_defaults,

@@ -45,8 +45,13 @@ export interface IngestProgress {
   handled: number;
   /** Files the walk found, fixed before the first parse. */
   total: number;
-  outcome: "indexed" | "skipped" | "failed";
+  outcome: "indexed" | "skipped" | "deferred" | "failed";
 }
+
+/** Stage 1 keeps the legacy whole-file parser only behind a hard input fence.
+ * Streaming and compressed-source support belong to later stages. */
+export const LEGACY_SOURCE_LIMIT_BYTES = 16 * 1024 * 1024;
+const DIAGNOSTIC_SAMPLE_LIMIT = 20;
 
 export interface IngestOptions {
   /** The roots to walk this run. Normally every parser's root; naming a
@@ -58,6 +63,10 @@ export interface IngestOptions {
    * the index mirrors stores that already bound themselves — Claude prunes
    * at 90 days, and the corpus spans weeks, not years. */
   retainDays?: number;
+  /** Reparse safe sources even when their size and mtime are unchanged. */
+  force?: boolean;
+  /** Test seam for the Stage 1 whole-source allocation fence. */
+  maxSourceBytes?: number;
   onProgress?: (event: IngestProgress) => void;
   /** Stop between complete session transactions; do not prune an unfinished pass. */
   signal?: AbortSignal;
@@ -68,6 +77,18 @@ export interface IngestOptions {
 export interface IngestFailure {
   path: string;
   error: string;
+}
+
+export interface IngestDeferral {
+  path: string;
+  reason: "compressed_source" | "source_too_large" | "source_changed" | "empty_parse";
+  bytes: number;
+}
+
+export interface RootCoverage {
+  root: string;
+  status: "complete" | "unavailable" | "incomplete";
+  errors: number;
 }
 
 export interface IngestResult {
@@ -81,10 +102,24 @@ export interface IngestResult {
   removed: number;
   failed: number;
   failures: IngestFailure[];
+  failuresOmitted: number;
+  deferred: number;
+  deferrals: IngestDeferral[];
+  deferralsOmitted: number;
+  /** True only when every configured root/subtree/stat and every source was
+   * handled completely, so disappearance was safe to mirror. */
+  complete: boolean;
+  outcome: "complete" | "deferred" | "incomplete";
+  pruning: "applied" | "withheld";
+  coverage: RootCoverage[];
+  sourceBytesConsidered: number;
+  sourceBytesRead: number;
+  elapsedMs: number;
   /** Configured roots that were not there to read — an unmounted volume, a
    * store this machine does not have. Their sessions stay in the index; see
    * the retention rule in `ingest`. */
   unavailableRoots: string[];
+  incompleteRoots: string[];
 }
 
 interface ScannedFile {
@@ -97,6 +132,7 @@ interface KnownRow {
   id: number;
   size: number;
   mtimeMs: number;
+  updatedAt: string;
 }
 
 const TRANSCRIPT = /\.jsonl(\.zst)?$/;
@@ -113,9 +149,10 @@ const TRANSCRIPT = /\.jsonl(\.zst)?$/;
 function scanRoot(
   root: string,
   onError: (path: string, error: unknown) => void,
-): { files: ScannedFile[]; available: boolean } {
+): { files: ScannedFile[]; status: RootCoverage["status"]; errors: number } {
   const files: ScannedFile[] = [];
-  let available = true;
+  let status: RootCoverage["status"] = "complete";
+  let errors = 0;
   const stack: string[] = [root];
   while (stack.length > 0) {
     const dir = stack.pop();
@@ -126,10 +163,11 @@ function scanRoot(
     } catch (error) {
       // A root that is not installed on this machine is not a failure; a
       // root we cannot read is.
+      errors++;
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") onError(dir, error);
       // The root itself being absent is the case retention must not mistake
       // for "every session under it was deleted".
-      if (dir === root) available = false;
+      status = dir === root ? "unavailable" : "incomplete";
       continue;
     }
     entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
@@ -145,6 +183,8 @@ function scanRoot(
         const stat = statSync(path);
         files.push({ path, size: stat.size, mtimeMs: Math.round(stat.mtimeMs) });
       } catch (error) {
+        errors++;
+        status = "incomplete";
         onError(path, error);
       }
     }
@@ -152,7 +192,7 @@ function scanRoot(
       stack.push(directories[index] as string);
     }
   }
-  return { files, available };
+  return { files, status, errors };
 }
 
 /** The parser whose root contains this one — the longest match, so a store
@@ -183,13 +223,19 @@ function isUnchanged(file: ScannedFile, known: KnownRow | undefined): boolean {
 /** The indexed rows, keyed by path. */
 function knownRows(db: Database): Map<string, KnownRow> {
   const known = new Map<string, KnownRow>();
-  for (const row of db.query("SELECT id, source_path, size, mtime_ms FROM sessions").all() as {
+  for (const row of db.query("SELECT id, source_path, size, mtime_ms, updated_at FROM sessions").all() as {
     id: number;
     source_path: string;
     size: number;
     mtime_ms: number;
+    updated_at: string;
   }[]) {
-    known.set(row.source_path, { id: row.id, size: row.size, mtimeMs: row.mtime_ms });
+    known.set(row.source_path, {
+      id: row.id,
+      size: row.size,
+      mtimeMs: row.mtime_ms,
+      updatedAt: row.updated_at,
+    });
   }
   return known;
 }
@@ -202,6 +248,11 @@ export interface PendingReport {
   /** Indexed sessions whose transcript is gone from a readable root. */
   vanished: number;
   unavailableRoots: string[];
+  incompleteRoots: string[];
+  deferred: number;
+  deferredBytes: number;
+  complete: boolean;
+  coverage: RootCoverage[];
 }
 
 /**
@@ -213,36 +264,71 @@ export interface PendingReport {
 export function pendingWork(db: Database, options: IngestOptions): PendingReport {
   const files: ScannedFile[] = [];
   const unavailableRoots: string[] = [];
+  const incompleteRoots: string[] = [];
+  const coverage: RootCoverage[] = [];
   for (const root of options.roots) {
     const scan = scanRoot(root, () => {});
     files.push(...scan.files);
-    if (!scan.available) unavailableRoots.push(root);
+    coverage.push({ root, status: scan.status, errors: scan.errors });
+    if (scan.status === "unavailable") unavailableRoots.push(root);
+    if (scan.status !== "complete") incompleteRoots.push(root);
   }
   const known = knownRows(db);
   const seen = new Set<string>();
   let pending = 0;
+  let deferred = 0;
+  let deferredBytes = 0;
+  const maxSourceBytes = options.maxSourceBytes ?? LEGACY_SOURCE_LIMIT_BYTES;
   for (const file of files) {
     seen.add(file.path);
-    if (!isUnchanged(file, known.get(file.path))) pending++;
+    if (!isUnchanged(file, known.get(file.path))) {
+      pending++;
+      if (file.path.endsWith(".zst") || file.size > maxSourceBytes) {
+        deferred++;
+        deferredBytes += file.size;
+      }
+    }
   }
   const isUnder = (path: string, root: string): boolean =>
     path === root || path.startsWith(root.endsWith("/") ? root : `${root}/`);
   let vanished = 0;
   for (const path of known.keys()) {
     if (seen.has(path)) continue;
-    if (unavailableRoots.some((root) => isUnder(path, root))) continue;
+    if (!options.roots.some((root) => isUnder(path, root))) continue;
+    if (incompleteRoots.some((root) => isUnder(path, root))) continue;
     vanished++;
   }
-  return { scanned: files.length, pending, vanished, unavailableRoots };
+  return {
+    scanned: files.length,
+    pending,
+    vanished,
+    unavailableRoots,
+    incompleteRoots,
+    deferred,
+    deferredBytes,
+    complete: incompleteRoots.length === 0 && deferred === 0,
+    coverage,
+  };
 }
 
 export async function ingest(db: Database, options: IngestOptions): Promise<IngestResult> {
   const { roots, parsers, onProgress } = options;
+  const started = performance.now();
   options.signal?.throwIfAborted();
   const now = options.now ?? (() => new Date());
   const failures: IngestFailure[] = [];
+  let failureCount = 0;
   const record = (path: string, error: unknown): void => {
-    failures.push({ path, error: message(error) });
+    failureCount++;
+    if (failures.length < DIAGNOSTIC_SAMPLE_LIMIT) {
+      failures.push({ path, error: message(error).slice(0, 512) });
+    }
+  };
+  const deferrals: IngestDeferral[] = [];
+  let deferred = 0;
+  const defer = (entry: IngestDeferral): void => {
+    deferred++;
+    if (deferrals.length < DIAGNOSTIC_SAMPLE_LIMIT) deferrals.push(entry);
   };
 
   // Resolving ownership up front turns a misconfigured root into one error
@@ -255,11 +341,15 @@ export async function ingest(db: Database, options: IngestOptions): Promise<Inge
 
   const files: ScannedFile[] = [];
   const unavailableRoots: string[] = [];
+  const incompleteRoots: string[] = [];
+  const coverage: RootCoverage[] = [];
   for (const root of roots) {
     options.signal?.throwIfAborted();
     const scan = scanRoot(root, record);
     files.push(...scan.files);
-    if (!scan.available) unavailableRoots.push(root);
+    coverage.push({ root, status: scan.status, errors: scan.errors });
+    if (scan.status === "unavailable") unavailableRoots.push(root);
+    if (scan.status !== "complete") incompleteRoots.push(root);
   }
 
   const known = knownRows(db);
@@ -331,7 +421,11 @@ export async function ingest(db: Database, options: IngestOptions): Promise<Inge
   let skipped = 0;
   let removed = 0;
   let handled = 0;
+  let sourceBytesRead = 0;
+  const sourceBytesConsidered = files.reduce((total, file) => total + file.size, 0);
+  const maxSourceBytes = options.maxSourceBytes ?? LEGACY_SOURCE_LIMIT_BYTES;
   const present = new Set<string>();
+  const retire = new Set<string>();
   const report = (path: string, outcome: IngestProgress["outcome"]): void => {
     handled++;
     onProgress?.({ path, handled, total: files.length, outcome });
@@ -347,15 +441,13 @@ export async function ingest(db: Database, options: IngestOptions): Promise<Inge
     options.signal?.throwIfAborted();
     const existing = known.get(file.path);
 
-    // Aged out by the file's own clock, so an old transcript is dropped
-    // without being parsed — and, crucially, without being reindexed on
-    // every run only to be pruned again at the end of it.
-    if (cutoffMs !== null && file.mtimeMs < cutoffMs) {
+    // Aged-out and duplicate rows are only retired after complete coverage
+    // has been proven for the whole pass. Until then they remain searchable.
+    const indexedUpdatedMs = existing?.updatedAt ? Date.parse(existing.updatedAt) : Number.NaN;
+    if (cutoffMs !== null &&
+      (file.mtimeMs < cutoffMs || (Number.isFinite(indexedUpdatedMs) && indexedUpdatedMs < cutoffMs))) {
       present.add(file.path);
-      if (existing !== undefined) {
-        deleteById.run(existing.id);
-        removed++;
-      }
+      if (existing !== undefined) retire.add(file.path);
       skipped++;
       report(file.path, "skipped");
       continue;
@@ -365,20 +457,34 @@ export async function ingest(db: Database, options: IngestOptions): Promise<Inge
     if (claimed.has(identity)) {
       // A copy of a session an earlier root already supplied. Drop any row it
       // left behind rather than carrying the same conversation twice.
-      if (existing !== undefined) {
-        deleteById.run(existing.id);
-        removed++;
-      }
+      present.add(file.path);
+      if (existing !== undefined) retire.add(file.path);
       skipped++;
       report(file.path, "skipped");
       continue;
     }
     claimed.add(identity);
 
-    if (isUnchanged(file, existing)) {
+    if (!options.force && isUnchanged(file, existing)) {
       present.add(file.path);
       skipped++;
       report(file.path, "skipped");
+      continue;
+    }
+
+    // The legacy parsers materialize a complete string and split it into a
+    // complete record array. Refuse unsupported or oversized sources before
+    // invoking `read`, which is the allocation boundary Stage 1 contains.
+    if (file.path.endsWith(".zst")) {
+      present.add(file.path);
+      defer({ path: file.path, reason: "compressed_source", bytes: file.size });
+      report(file.path, "deferred");
+      continue;
+    }
+    if (file.size > maxSourceBytes) {
+      present.add(file.path);
+      defer({ path: file.path, reason: "source_too_large", bytes: file.size });
+      report(file.path, "deferred");
       continue;
     }
 
@@ -387,7 +493,15 @@ export async function ingest(db: Database, options: IngestOptions): Promise<Inge
     try {
       if (binding === null) throw new Error("no parser owns this file");
       const content = await abortableRead(binding.read(file.path), options.signal);
+      sourceBytesRead += Buffer.byteLength(content);
       options.signal?.throwIfAborted();
+      const afterRead = statSync(file.path);
+      if (afterRead.size !== file.size || Math.round(afterRead.mtimeMs) !== file.mtimeMs) {
+        present.add(file.path);
+        defer({ path: file.path, reason: "source_changed", bytes: afterRead.size });
+        report(file.path, "deferred");
+        continue;
+      }
       session = binding.parse(content, file.path);
       options.signal?.throwIfAborted();
     } catch (error) {
@@ -400,16 +514,13 @@ export async function ingest(db: Database, options: IngestOptions): Promise<Inge
       continue;
     }
 
-    if (session === null) {
-      // Nothing indexable — an empty or truncated transcript. Not an error,
-      // and no row is kept, so the next run reconsiders it for free.
+    if (session === null || session.messages.length === 0) {
+      // Empty output is ambiguous: the source may be incomplete, truncated,
+      // or a format the legacy parser does not understand. Keep the previous
+      // searchable row and make the incomplete coverage explicit.
       present.add(file.path);
-      if (existing !== undefined) {
-        deleteById.run(existing.id);
-        removed++;
-      }
-      skipped++;
-      report(file.path, "skipped");
+      defer({ path: file.path, reason: "empty_parse", bytes: file.size });
+      report(file.path, "deferred");
       continue;
     }
 
@@ -439,21 +550,23 @@ export async function ingest(db: Database, options: IngestOptions): Promise<Inge
   options.signal?.throwIfAborted();
   const isUnder = (path: string, root: string): boolean =>
     path === root || path.startsWith(root.endsWith("/") ? root : `${root}/`);
-  for (const [path, row] of known) {
-    if (present.has(path)) continue;
-    if (unavailableRoots.some((root) => isUnder(path, root))) continue;
-    deleteById.run(row.id);
-    removed++;
-  }
-
-  if (cutoffMs !== null) {
-    const cutoff = new Date(cutoffMs).toISOString();
-    // Undated sessions are never pruned by age: we cannot say how old they
-    // are, and guessing would delete what the operator can still resume.
-    const pruned = db
-      .query("DELETE FROM sessions WHERE updated_at <> '' AND updated_at < ?")
-      .run(cutoff);
-    removed += pruned.changes;
+  const complete = incompleteRoots.length === 0 && failureCount === 0 && deferred === 0;
+  if (complete) {
+    for (const path of retire) {
+      const row = known.get(path);
+      if (row !== undefined) {
+        deleteById.run(row.id);
+        removed++;
+      }
+    }
+    for (const [path, row] of known) {
+      if (present.has(path) || retire.has(path)) continue;
+      // A deliberately narrow/injected root never authorizes deleting rows
+      // from another configured store.
+      if (!roots.some((root) => isUnder(path, root))) continue;
+      deleteById.run(row.id);
+      removed++;
+    }
   }
 
   return {
@@ -461,9 +574,21 @@ export async function ingest(db: Database, options: IngestOptions): Promise<Inge
     indexed,
     skipped,
     removed,
-    failed: failures.length,
+    failed: failureCount,
     failures,
+    failuresOmitted: failureCount - failures.length,
+    deferred,
+    deferrals,
+    deferralsOmitted: deferred - deferrals.length,
+    complete,
+    outcome: complete ? "complete" : deferred > 0 ? "deferred" : "incomplete",
+    pruning: complete ? "applied" : "withheld",
+    coverage,
+    sourceBytesConsidered,
+    sourceBytesRead,
+    elapsedMs: Math.round(performance.now() - started),
     unavailableRoots,
+    incompleteRoots,
   };
 }
 

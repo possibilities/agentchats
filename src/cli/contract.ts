@@ -61,9 +61,9 @@ const commands: ContractCommand[] = [
   {
     name: "index", summary: "Build or incrementally refresh the derived session index",
     audience: "agent", mutates: true, blocking: true, x_output: "json-or-text",
-    guidance: "Refresh when the index is missing or relevant transcript changes make it stale. This can take time on a large corpus. Default indexing is incremental. Full discards only the derived database; it never removes transcripts. Cancellation retains completed session transactions and skips the unfinished pass's final pruning. A success:false report retains its failure details even when some sessions were indexed.",
+    guidance: "Refresh when the index is missing or relevant transcript changes make it stale. One canonical writer and resource preflight guard every CLI, MCP, and installer pass. The Stage 1 legacy parser defers compressed and over-16-MiB changed sources before reading their bodies. Default indexing is incremental. Full forces safe sources through the same non-destructive replacement path; it preserves the prior searchable row on deferral or incomplete parsing. Cancellation retains completed session transactions and skips final pruning. Inspect complete, outcome, runDeferrals, deferrals, failures, coverage, and pruning; success:false can still include indexed work.",
     arguments: [
-      { name: "--full", type: "boolean", description: "Discard the derived index and rebuild it from the configured transcript roots." },
+      { name: "--full", type: "boolean", description: "Force every safe source through reparsing without discarding the existing index first; incomplete or deferred sources keep their prior searchable rows." },
       { name: "--retain-days", type: "integer", minimum: 0, description: "Also drop indexed sessions older than N days; source transcripts remain untouched." },
       json,
     ],
@@ -71,7 +71,7 @@ const commands: ContractCommand[] = [
   {
     name: "status", summary: "Inspect index counts, health, and freshness",
     audience: "agent", mutates: true, x_output: "json-or-text",
-    guidance: "Returns a successful payload even for an empty index. Branch on healthy and stale, and inspect unavailableRoots. Opening a missing index may create its derived database and schema; it does not ingest transcripts.",
+    guidance: "Returns a successful payload even for an empty index. Branch on healthy, stale, and complete; inspect deferred, coverage, incompleteRoots, lastAttempt, and lastSuccessfulCompleteReconciliation. Opening a missing index may create its derived database and schema; it does not ingest transcripts.",
     arguments: [json],
   },
   {

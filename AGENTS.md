@@ -48,10 +48,14 @@ synchronization path here.
 - The installer resolves the complete frozen dependency lockfile before
   linking the CLI. It then refreshes the index through the newly linked
   CLI — every step idempotent, so a rerun after a failure just resumes.
-- The index prepares incrementally when healthy and rebuilds fully via
-  `agentchats index --full` when missing, unhealthy, or after a failed
-  incremental refresh. Freshness between installs is the skill's job
-  (`agentchats status`), not a daemon's.
+- The index prepares incrementally. `agentchats index --full` forces every
+  safe source through reparsing without deleting the useful old index first;
+  deferred or incomplete sources keep their prior rows. Freshness between
+  installs is the skill's job (`agentchats status`), not a daemon's.
+- Every ingest entry point shares the canonical writer lease and containment
+  preflight. Installer exit 75 means the CLI installed but index preparation
+  deferred; do not turn that into an installation failure or a claim that the
+  index is ready.
 - Index-building subprocesses are time-bounded (`scripts/run-with-timeout`)
   and fully reaped on timeout or installer termination — the installer's
   TERM/INT/HUP traps kill the child and wait for it, so a stuck rebuild
@@ -100,10 +104,11 @@ synchronization path here.
   (15-second wait, 30-second checking deadline). It requires Python 3.9+, Bash,
   and ShellCheck, performs no installs, and retains existing hooks.
 - `src/parse/`, `src/store/`, or `src/cli/` changes: `bun test` and
-  `bunx tsc --noEmit` here, then `./bin/agentchats index` against a real
-  `HOME` to confirm ingest still runs end-to-end. The
-  `~/.local/bin/agentchats` link points into this checkout, so a CLI edit
-  is live once the link exists; `scripts/install.sh --install` creates it.
+  `bunx tsc --noEmit` here, then `./bin/agentchats index` against a disposable
+  `HOME` fixture to confirm ingest still runs end-to-end. A live-home canary is
+  a separate explicit operation because it may encounter a large active source.
+  The `~/.local/bin/agentchats` link points into this checkout, so a CLI edit is
+  live once the link exists; `scripts/install.sh --install` creates it.
 - `src/tui/` changes: `bun test` and `bunx tsc --noEmit` here, then a pty
   smoke — the picker under `expect` with stdout captured must emit a valid
   resume directive on enter and nothing on escape. The TUI follows the
