@@ -27,9 +27,8 @@ export interface SessionDirective {
 /**
  * A resume directive: the session's own workspace as cwd (a worktree
  * session recorded its worktree, so resuming there is what carries the
- * worktree over — resume never mints a new one), the shim's --x-resume
- * spelling as the args, and no intent — the harness restores the session's
- * own model, effort, and conversation. Tab naming needs nothing here:
+ * worktree over — resume never mints a new one), native resume arguments,
+ * and no intent — the harness restores the conversation. Tab naming needs nothing here:
  * herdr's agent-detection hook names the tab from the resumed conversation.
  */
 export function buildResumeDirective(
@@ -41,7 +40,10 @@ export function buildResumeDirective(
     cwd: target.cwd,
     worktree: false,
     focus: true,
-    agent: { kind: target.kind, args: ["--x-resume", target.sessionId] },
+    agent: {
+      kind: target.kind,
+      args: target.kind === "claude" ? ["--resume", target.sessionId] : ["resume", target.sessionId],
+    },
     session_id: target.sessionId,
     intent: null,
     record: { tool: "agentchats", query: record.query, source_path: record.source_path },

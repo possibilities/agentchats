@@ -39,10 +39,12 @@ describe("buildResumeDirective", () => {
     expect(directive.focus).toBe(true);
   });
 
-  test("args are the shim's --x-resume spelling and nothing else", () => {
+  test("args use the harness's native resume spelling", () => {
     const directive = buildResumeDirective(TARGET, { query: "", source_path: "/s.jsonl" });
     expect(directive.agent.kind).toBe("claude");
-    expect(directive.agent.args).toEqual(["--x-resume", TARGET.sessionId]);
+    expect(directive.agent.args).toEqual(["--resume", TARGET.sessionId]);
+    expect(buildResumeDirective({ ...TARGET, kind: "codex" }, { query: "", source_path: "/s" }).agent.args)
+      .toEqual(["resume", TARGET.sessionId]);
   });
 
   test("declares its native session so the host focuses a live one instead", () => {

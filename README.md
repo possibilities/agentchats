@@ -104,7 +104,7 @@ beneath the search field makes that scope a first-class control: Tab focuses
 it, Space or Enter opens its fuzzy chooser, and the arrows step through its
 values. The chooser offers all projects, the opening project, then `~/code`
 and `~/source` one level deep—the same bounded, transcript-independent discovery
-rule as AgentLaunch. Ctrl+g still toggles between the selected project and all
+rule originally used by archived AgentLaunch. Ctrl+g still toggles between the selected project and all
 projects, and **choose project** remains in the ctrl+k palette.
 
 Legacy producers that predate `thread_source` can be classified by their

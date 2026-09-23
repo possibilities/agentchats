@@ -20,7 +20,7 @@ function expandTilde(path: string, home: string): string {
 }
 
 /**
- * The AgentLaunch project rule: offer each configured root and its immediate
+ * The picker project rule: offer each configured root and its immediate
  * directories, including directory symlinks. Missing roots are harmless.
  * This is a bounded filesystem scan, independent of transcript volume.
  */

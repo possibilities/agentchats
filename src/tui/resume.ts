@@ -30,12 +30,12 @@ export function resumeKind(agent: string): ResumeKind | null {
   return RESUMABLE[agent] ?? null;
 }
 
-/** Native session ids are glob-literal in every store agentlaunch scans. */
+/** Native session ids are glob-literal in each harness store. */
 const SESSION_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 
 /**
- * The native session id, from the store layouts agentlaunch resumes from:
+ * The native session id, from the harness store layouts:
  *   claude  projects/<slug>/<id>.jsonl
  *   codex   sessions/.../rollout-<stamp>-<uuid>.jsonl[.zst]
  */

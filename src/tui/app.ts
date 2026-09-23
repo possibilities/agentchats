@@ -223,8 +223,8 @@ export async function runSearch(
   queryRow.add(rail);
   queryRow.add(query);
   frame.add(queryRow);
-  // Project is a first-class field beneath search, following AgentLaunch's
-  // form grammar: Tab focuses it; Space/Enter opens its fuzzy chooser.
+  // Project is a first-class field beneath search: Tab focuses it;
+  // Space/Enter opens its fuzzy chooser.
   const projectRow = new core.BoxRenderable(renderer, {
     id: "search-project-row",
     width: "100%",

@@ -77,8 +77,8 @@ function collapse(text: string): string {
  * The rollout filename carries the id Codex actually resumes by, and it is
  * the only value that identifies *this* rollout: `session_meta.session_id`
  * is inherited by forked threads and collides across files. The whole fleet
- * already resumes by this — the picker's directive, `agentchats resume`, and
- * agentlaunch's `--x-resume` all derive it from the path — so the index
+ * already resumes by this — the picker's directive and `agentchats resume`
+ * derive it from the path — so the index
  * publishing anything else in `session_id` would hand agents an id that
  * resumes the wrong conversation.
  */
