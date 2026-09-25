@@ -88,11 +88,8 @@ rank its own prior excerpts. Ordinary conversation about the tool remains.
 
 ## Operator and installation paths
 
-`agentchats search` without `--json` opens the human Signal Room picker,
-optionally seeded by a query and scoped by `--workspace`. It shows full
-harness sessions by default; `--include-auxiliary` also shows app-server,
-realtime, and child sessions. A pick writes a resume directive consumed by
-AgentSurface. MCP search always invokes the producer query, never this TUI.
+`agentchats search` with or without `--json` returns the producer query as
+JSON. Scope it with `--workspace`; use `resume` for a native human handoff.
 
 Terminal scripts retain `--json` and their original output contracts:
 command-specific JSON on stdout, errors as `{error:{code,message,hint}}` on

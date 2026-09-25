@@ -19,8 +19,8 @@ Three pieces do that:
 - **The `agentchats` command and MCP surface.** `bin/agentchats`, linked editable into
   `~/.local/bin` by the installer. `state` prints a budget-capped bearings
   dump for agents re-orienting in a project; `search`, `sessions`, `view`,
-  `expand`, and `resume` are the query surface; bare `search` with no
-  `--json` is the Signal Room resume picker (`src/tui/`, bun + OpenTUI).
+  `expand`, and `resume` are the query surface; `search` returns JSON with or
+  without `--json`.
   `agentchats mcp` serves the same typed producer handlers over stdio.
 - **The `chats` skill.** `skills/chats/SKILL.md` is a runbook that teaches
   agents to use MCP through the directly connected MCP server: freshness, the search → view/expand → resume
@@ -73,7 +73,7 @@ only returns a human handoff command and never launches a session.
 
 ```sh
 agentchats state [--workspace <dir>] [--budget <tokens>]
-agentsurface host -- agentchats search [query…] [--workspace <dir>] [--include-auxiliary]
+agentchats search [query…] [--workspace <dir>]
 ```
 
 Prints the recent sessions for one workspace (the current git project by
@@ -92,20 +92,9 @@ budget-capped, fast, offline, read-only, and silent when there is nothing to
 say. Searching and reading the sessions themselves is `agentchats
 search`/`sessions`/`view`/`expand` — the chats skill is that runbook.
 
-The search picker shows full-harness sessions by default. Modern Codex
-rollouts whose explicit `thread_source` is not `user` — app-server, realtime,
-and child-agent sessions — are auxiliary. Include them for one invocation with
-`--include-auxiliary`, or toggle them from the ctrl+k command palette. The
-session index holds both classes regardless; only the picker's default view
-narrows to full-harness.
-
-Search starts in the current git project (or cwd outside Git). The project row
-beneath the search field makes that scope a first-class control: Tab focuses
-it, Space or Enter opens its fuzzy chooser, and the arrows step through its
-values. The chooser offers all projects, the opening project, then `~/code`
-and `~/source` one level deep—the same bounded, transcript-independent discovery
-rule originally used by archived AgentLaunch. Ctrl+g still toggles between the selected project and all
-projects, and **choose project** remains in the ctrl+k palette.
+Modern Codex rollouts whose explicit `thread_source` is not `user` —
+app-server, realtime, and child-agent sessions — are indexed alongside
+full-harness sessions. Use `--workspace` to scope a query to a project.
 
 Legacy producers that predate `thread_source` can be classified by their
 Codex `originator` in the optional XDG config at
@@ -131,7 +120,7 @@ classified as auxiliary; unknown keys or malformed values fail visibly.
 src/parse/                transcript parsers (Claude Code, Codex)
 src/store/                SQLite+FTS5 schema, ingest, and query
 src/cli/                  the agentchats command surface
-src/tui/                  the Signal Room resume picker
+src/tui/                  native resume identity and archive configuration
 scripts/install.sh        installer (AgentStart calls this)
 scripts/run-with-timeout  bounded subprocess runner used by the installer
 bin/agentchats            the agentchats CLI entry point, linked into ~/.local/bin

@@ -21,11 +21,6 @@ async function main(argv: string[]): Promise<number> {
   }
   const rest = argv.slice(1);
   try {
-    // Preserve the existing operator picker, including its own help and input grammar.
-    if (name === "search" && !rest.includes("--json")) {
-      const { runPicker } = await import("../tui/main.ts");
-      return await runPicker(rest, process.env);
-    }
     if (rest.includes("--help") || rest.includes("-h")) {
       process.stdout.write(commandHelp(command));
       return EXIT.ok;

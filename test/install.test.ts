@@ -9,7 +9,7 @@ let env: Record<string, string | undefined>;
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), "agentchats-install-"));
   repo = join(root, "repo");
-  for (const path of ["repo/scripts", "repo/bin", "repo/node_modules/@opentui/core", "fake-bin", "home"]) mkdirSync(join(root, path), { recursive: true });
+  for (const path of ["repo/scripts", "repo/bin", "fake-bin", "home"]) mkdirSync(join(root, path), { recursive: true });
   for (const file of ["install.sh", "run-with-timeout"]) copyFileSync(resolve(import.meta.dir, "../scripts", file), join(repo, "scripts", file));
   writeFileSync(join(root, "fake-bin/bun"), '#!/bin/bash\nprintf "deps:%s\\n" "$*" >> "$AGENTCHATS_TEST_INSTALL_LOG"\n[ "${AGENTCHATS_TEST_FAIL_INSTALL:-0}" != 1 ]\n', { mode: 0o755 });
   writeFileSync(join(repo, "bin/agentchats"), '#!/bin/bash\nprintf "cli:%s\\n" "$*" >> "$AGENTCHATS_TEST_INSTALL_LOG"\nexit "${AGENTCHATS_TEST_INDEX_EXIT:-0}"\n', { mode: 0o755 });

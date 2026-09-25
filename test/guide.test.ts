@@ -21,3 +21,19 @@ test("operator and producer help stay available without opening a picker", async
     expect(stdout + stderr).toContain("agentchats");
   }
 });
+
+test("bare search uses the query path rather than requiring a Surface host", async () => {
+  const child = Bun.spawn([CLI, "search", "retirement-probe"], {
+    stdout: "pipe",
+    stderr: "pipe",
+    env: { ...process.env, HOME: "/nonexistent/agentchats-retirement-probe" },
+  });
+  const [stdout, stderr, code] = await Promise.all([
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+    child.exited,
+  ]);
+  expect(code).toBe(3);
+  expect(stdout).toBe("");
+  expect(JSON.parse(stderr).error.code).toBe("missing-index");
+});

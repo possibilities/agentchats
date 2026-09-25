@@ -18,8 +18,8 @@ the path from transcript to search result:
   the in-process stdio MCP adapter.
 - `src/routing/` — bounded reads of exact native rollouts and stateless authored
   receipt validation; native history retains evidence, with no second store.
-- `src/tui/` — the Signal Room resume picker (bun + OpenTUI) behind
-  `agentchats search` with no `--json`.
+- `src/tui/` — native resume and archive-configuration helpers;
+  `agentchats search` returns JSON without a Surface host.
 - `scripts/install.sh` — links the `agentchats` CLI into `~/.local/bin` and
   refreshes the session index.
 - `skills/chats/` — the source of the `chats` agent skill, the runbook that
@@ -68,8 +68,8 @@ synchronization path here.
   those arguments into the same typed handlers as the CLI, preserving the
   existing command-specific JSON, error objects, and Markdown. Keep stdout
   exclusively JSON-RPC in MCP mode. Test cancellation, progress, and unforced
-  EOF shutdown when changing ingestion or the transport. The operator picker
-  keeps its own terminal grammar; MCP must never launch it.
+   EOF shutdown when changing ingestion or the transport. MCP must never
+   launch an interactive picker.
 - `agentchats state` follows the shared `agent*` state-dump contract:
   scoped to one workspace, bounded by `--budget` (approximate tokens),
   fast, offline, read-only, markdown a model reads directly, and silent
@@ -109,11 +109,6 @@ synchronization path here.
   a separate explicit operation because it may encounter a large active source.
   The `~/.local/bin/agentchats` link points into this checkout, so a CLI edit is
   live once the link exists; `scripts/install.sh --install` creates it.
-- `src/tui/` changes: `bun test` and `bunx tsc --noEmit` here, then a pty
-  smoke — the picker under `expect` with stdout captured must emit a valid
-  resume directive on enter and nothing on escape. The TUI follows the
-  `fleet-tui-design` wiki contract (chromeless, ctrl+k palette, Signal
-  Room tokens in `src/tui/theme.ts`).
 - Installer changes: `./scripts/install.sh --check` here to see the plan,
   then `--install` to apply it, then AgentStart's convergence check
   (`~/code/agentstart/scripts/install.sh --install`).

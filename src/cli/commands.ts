@@ -119,10 +119,7 @@ function filters(values: {
 
 /**
  * The agentchats command surface. Two audiences share one binary: an agent
- * reading JSON, and a human driving the picker. `search` is where they meet —
- * bare it opens the picker, `--json` makes it the agent surface — because the
- * herdr plugin invokes `agentchats search` and that contract predates this
- * index.
+ * reading JSON, including from the bare `search` command.
  *
  * Indexing changes derived state; opening an absent index can initialize it.
  * The terminal renders these returned values, keeping ordinary failures off

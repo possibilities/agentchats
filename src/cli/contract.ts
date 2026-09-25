@@ -29,13 +29,11 @@ export interface ContractCommand {
   arguments: ContractArgument[];
   examples?: Array<{ invocation: string; description: string }>;
   x_output: "json" | "text" | "json-or-text";
-  /** The existing bare-search picker has a separate operator grammar. */
-  x_operator_arguments?: ContractArgument[];
 }
 
 const json: ContractArgument = {
   name: "--json", type: "boolean", role: "output-format",
-  description: "Print this command's JSON result; search selects the producer query instead of the human picker.",
+  description: "Print this command's JSON result.",
 };
 const workspace: ContractArgument = {
   name: "--workspace", type: "string", format: "path", direction: "in",
@@ -77,7 +75,7 @@ const commands: ContractCommand[] = [
   {
     name: "search", summary: "Search ranked sessions with bounded excerpts and exact citations",
     audience: "agent", mutates: false, x_output: "json",
-    guidance: "MCP always uses the producer query. Bare terminal search opens the existing human resume picker. One hit represents one session and cites its best matching message. Terms AND within one message. An empty query lists the filtered scope. Aggregate dimensions are independent facets, not a cross-product. Preserve source_path and line for view and expand.",
+    guidance: "One hit represents one session and cites its best matching message. Terms AND within one message. An empty query lists the filtered scope. Aggregate dimensions are independent facets, not a cross-product. Preserve source_path and line for view and expand.",
     arguments: [
       { name: "query", type: "string", positional: true, default: "", description: "FTS5 terms, quoted phrases, OR/NOT, or prefix wildcards. Empty means everything in the selected scope." },
       { name: "--limit", type: "integer", minimum: 0, default: 10, description: "Maximum ranked sessions returned." },
@@ -87,11 +85,6 @@ const commands: ContractCommand[] = [
       { name: "--max-content-length", type: "integer", minimum: 0, description: "Cap snippet and title length without truncating citation fields." },
       { name: "--aggregate", type: "string", csv: true, description: "Return counts for comma-joined agent, workspace, or date dimensions instead of hits." },
       json,
-    ],
-    x_operator_arguments: [
-      { name: "query", type: "string", positional: true, description: "Optional starting query for the human picker." },
-      workspace,
-      { name: "--include-auxiliary", type: "boolean", description: "Include app-server, realtime, and child Codex threads in the human picker." },
     ],
     examples: [{ invocation: 'agentchats search "authentication timeout" --json --limit 5 --fields summary --max-content-length 400', description: "Find a bounded set of prior conversations." }],
   },
@@ -162,7 +155,7 @@ export const CONTRACT = {
     name: "agentchats", version: packageInfo.version, audience: "agent",
     purpose: "Search and reread local Claude Code and Codex transcripts through a derived SQLite index.",
   },
-  guidance: "Use Chats when prior decisions, debugging, or session context are relevant. Agents discover its MCP tools through the directly connected MCP server. Search bounded excerpts, then read exact source citations. The index is derived and can be stale; inspect status when freshness matters and refresh incrementally when needed. Native filesystem tools remain useful for exact source investigation. The operator CLI and human resume picker remain available.",
+    guidance: "Use Chats when prior decisions, debugging, or session context are relevant. Agents discover its MCP tools through the directly connected MCP server. Search bounded excerpts, then read exact source citations. The index is derived and can be stale; inspect status when freshness matters and refresh incrementally when needed. Native filesystem tools remain useful for exact source investigation.",
   concepts: {
     model: {
       scope: "Only Claude Code and Codex transcripts, plus explicitly configured archives. Live copies win over archived duplicates. Unavailable roots retain their indexed sessions.",

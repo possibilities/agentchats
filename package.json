@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Searchable coding-agent session history: a local SQLite+FTS5 index over the Claude Code and Codex transcript stores, the agentchats CLI, and the resume picker",
+  "description": "Searchable coding-agent session history: a local SQLite+FTS5 index over the Claude Code and Codex transcript stores and the agentchats CLI",
   "license": "MIT",
   "engines": {
     "bun": ">=1.3.14",
@@ -15,8 +15,7 @@
     "check": "bun run typecheck && bun run test"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "1.30.0",
-    "@opentui/core": "^0.3.0"
+    "@modelcontextprotocol/sdk": "1.30.0"
   },
   "devDependencies": {
     "@types/bun": "^1.3.0",
