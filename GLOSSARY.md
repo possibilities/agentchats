@@ -1,4 +1,4 @@
-# Context
+# agentchats glossary
 
 **chats** — this repository's agent skill: the runbook that teaches agents
 to search the session index. The skill is the guidance; `agentchats` is the

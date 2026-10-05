@@ -1,7 +1,7 @@
 # Decision log
 
 [0001: Own the session index](0001-own-the-session-index.md) is the current
-index-ownership decision. Read it with [CONTEXT.md](../../CONTEXT.md) before
+index-ownership decision. Read it with [GLOSSARY.md](../../GLOSSARY.md) before
 changing native readers, indexing or query behavior.
 
 [0002: Own the web conversation reader](0002-own-the-web-conversation-reader.md)

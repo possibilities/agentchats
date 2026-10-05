@@ -1,6 +1,6 @@
 # Agentchats agent guidance
 
-Read [CONTEXT.md](CONTEXT.md) for session/index terms and the
+Read [GLOSSARY.md](GLOSSARY.md) for session/index terms and the
 [decision log](docs/adr/README.md) before changing indexing or viewer boundaries.
 
 ## What this repository is
